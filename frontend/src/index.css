@@ -5,8 +5,8 @@
 body {
     margin: 0;
     font-family: Arial, Helvetica, sans-serif;
-    background: #f5f6f8;
-    color: #1f2937;
+    background: #d981fb;
+    color: #000000;
 }
 
 button,
@@ -19,7 +19,7 @@ textarea {
 .navbar {
     min-height: 72px;
     padding: 16px 28px;
-    background: white;
+    background: rgb(144, 3, 130);
     border-bottom: 1px solid #e5e7eb;
     display: flex;
     align-items: center;
@@ -161,4 +161,29 @@ td {
     .stats {
         grid-template-columns: repeat(2, 1fr);
     }
+
+
+    .badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: capitalize;
 }
+.badge-available {
+  background-color: #dcfce7;
+  color: #09702f; /* Verde */
+}
+.badge-loaned {
+  background-color: #fef3c7;
+  color: #4532d1; /* Portocaliu / Galben */
+}
+
+.badge-defective {
+  background-color: #fee2e2;
+  color: #b91c1c; /* Roșu */
+}
+}
+
+

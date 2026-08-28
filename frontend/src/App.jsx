@@ -52,6 +52,21 @@ export default function App() {
         return null;
     }
 
+    const getStatusBadge = (status) => {
+  switch (status?.toLowerCase()) {
+    case 'available':
+    case 'disponibil':
+      return <span className="badge badge-available">Disponibil</span>;
+    case 'loaned':
+    case 'imprumutat':
+      return <span className="badge badge-loaned">Împrumutat</span>;
+    case 'defective':
+    case 'defect':
+      return <span className="badge badge-defective">Defect</span>;
+    default:
+      return <span className="badge">{status}</span>;
+  }
+};
     return (
         <>
             <Navbar />

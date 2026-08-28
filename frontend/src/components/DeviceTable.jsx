@@ -20,7 +20,7 @@ export default function DeviceTable({ devices }) {
                             <td>{device.code}</td>
                             <td>{device.name}</td>
                             <td>{device.category}</td>
-                            <td>{device.status}</td>
+                           <td>{getStatusBadge(device.status)}</td>
                         </tr>
                     ))}
                 </tbody>
