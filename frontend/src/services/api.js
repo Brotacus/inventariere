@@ -27,3 +27,12 @@ export async function createDevice(device) {
 
     return response.json();
 }
+export async function deleteDevice(id) {
+  const response = await fetch(`http://localhost:8000/devices/${id}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error("Nu s-a putut șterge dispozitivul.");
+  }
+  return true;
+}
