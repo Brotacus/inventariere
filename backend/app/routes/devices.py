@@ -38,6 +38,8 @@ def validate_references(
         location = db.query(models.Location).filter(models.Location.id == location_id).first()
         if location is None:
             raise HTTPException(status_code=404, detail="Location not found")
+        if not location.active:
+            raise HTTPException(status_code=409, detail="Location is archived")
 
     if responsible_person_id is not None:
         person = (
@@ -211,36 +213,41 @@ def update_device(
 
 
 @router.delete("/{device_id}")
-def delete_device(device_id: int, db: Session = Depends(get_db)):
+def retire_device(device_id: int, db: Session = Depends(get_db)):
     db_device = db.query(models.Device).filter(models.Device.id == device_id).first()
 
     if db_device is None:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    loan_history = (
+    active_loan = (
         db.query(models.Loan)
-        .filter(models.Loan.device_id == device_id)
+        .filter(
+            models.Loan.device_id == device_id,
+            models.Loan.status == "ACTIVE",
+        )
         .first()
     )
-
-    if loan_history:
+    if active_loan:
         raise HTTPException(
             status_code=409,
-            detail="Device has loan history and cannot be deleted. Mark it RETIRED instead",
+            detail="Device has an active loan. Return it before retiring it",
         )
+
+    if db_device.status == "RETIRED":
+        return {"message": "Device is already retired"}
 
     old_value = device_snapshot(db_device)
+    db_device.status = "RETIRED"
+    db.flush()
 
-    # Keep the audit entry even after the device is removed.
-    # device_id stays NULL so a strict FK database (e.g. PostgreSQL) can delete safely.
     db.add(
         models.Log(
-            device_id=None,
-            action="DEVICE_DELETED",
+            device_id=db_device.id,
+            action="DEVICE_RETIRED",
             old_value=old_value,
+            new_value=device_snapshot(db_device),
         )
     )
-    db.delete(db_device)
     db.commit()
 
-    return {"message": "Device deleted"}
+    return {"message": "Device retired"}

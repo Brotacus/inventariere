@@ -12,7 +12,7 @@ import People from "./pages/People";
 import { deleteDevice, getDevices } from "./services/api";
 
 export default function App() {
-  const [currentPage, setCurrentPage] = useState("Dashboard");
+  const [currentPage, setCurrentPage] = useState(() => localStorage.getItem("inventory.currentPage") || "Dashboard");
   const [devices, setDevices] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [error, setError] = useState("");
@@ -31,8 +31,12 @@ export default function App() {
     loadDevices();
   }, [loadDevices]);
 
+  useEffect(() => {
+    localStorage.setItem("inventory.currentPage", currentPage);
+  }, [currentPage]);
+
   async function handleDeleteDevice(deviceId) {
-    if (!window.confirm("Sigur vrei să ștergi acest obiect?")) return;
+    if (!window.confirm("Retragi acest obiect din inventar? Datele și istoricul rămân salvate.")) return;
 
     try {
       await deleteDevice(deviceId);

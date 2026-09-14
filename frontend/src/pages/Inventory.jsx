@@ -9,7 +9,7 @@ export default function Inventory({ devices, onDelete, onUpdated }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    Promise.all([getLocations(), getPeople(false)])
+    Promise.all([getLocations(false), getPeople(false)])
       .then(([locationData, peopleData]) => {
         setLocations(locationData);
         setPeople(peopleData);

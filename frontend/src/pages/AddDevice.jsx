@@ -18,7 +18,7 @@ export default function AddDevice({ onDeviceAdded }) {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    Promise.all([getLocations(), getPeople(false)])
+    Promise.all([getLocations(false), getPeople(false)])
       .then(([locationData, peopleData]) => {
         setLocations(locationData);
         setPeople(peopleData);

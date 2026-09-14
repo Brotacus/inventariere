@@ -79,8 +79,8 @@ export function deactivatePerson(personId) {
   });
 }
 
-export function getLocations() {
-  return apiRequest("/locations/");
+export function getLocations(includeInactive = true) {
+  return apiRequest(`/locations/?include_inactive=${includeInactive}`);
 }
 
 export function createLocation(location) {
