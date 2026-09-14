@@ -65,12 +65,14 @@ class LocationCreate(BaseModel):
 class LocationUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
+    active: bool | None = None
 
 
 class LocationResponse(BaseModel):
     id: int
     name: str
     description: str | None = None
+    active: bool
 
     model_config = ConfigDict(from_attributes=True)
 

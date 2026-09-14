@@ -27,7 +27,7 @@ class Person(Base):
     name = Column(String, nullable=False)
     email = Column(String, nullable=True)
     phone = Column(String, nullable=True)
-    active = Column(Integer, default=1)
+    active = Column(Integer, default=1, nullable=False)
 
 
 class Location(Base):
@@ -36,6 +36,7 @@ class Location(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, unique=True)
     description = Column(Text, nullable=True)
+    active = Column(Integer, default=1, nullable=False)
 
 
 class Loan(Base):

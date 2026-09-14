@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.database import get_db
+from app.services.backup import create_database_backup
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -33,6 +34,12 @@ def get_admin_dashboard(db: Session = Depends(get_db)):
             or 0
         ),
         "locations_total": db.query(func.count(models.Location.id)).scalar() or 0,
+        "locations_active": (
+            db.query(func.count(models.Location.id))
+            .filter(models.Location.active == 1)
+            .scalar()
+            or 0
+        ),
         "active_loans": (
             db.query(func.count(models.Loan.id))
             .filter(models.Loan.status == "ACTIVE")
@@ -40,4 +47,13 @@ def get_admin_dashboard(db: Session = Depends(get_db)):
             or 0
         ),
         "logs_total": db.query(func.count(models.Log.id)).scalar() or 0,
+    }
+
+
+@router.post("/backup")
+def create_backup():
+    path = create_database_backup("manual")
+    return {
+        "message": "Backup created" if path else "Backup is only available for SQLite",
+        "path": path,
     }

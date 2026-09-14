@@ -17,7 +17,7 @@ export default function Locations() {
 
   async function loadLocations() {
     try {
-      setLocations(await getLocations());
+      setLocations(await getLocations(true));
       setError("");
     } catch (err) {
       setError(err.message);
@@ -61,11 +61,14 @@ export default function Locations() {
     }
   }
 
-  async function handleDelete(locationId) {
-    if (!window.confirm("Ștergi această locație?")) return;
-
+  async function toggleActive(location) {
     try {
-      await deleteLocation(locationId);
+      if (location.active) {
+        if (!window.confirm("Arhivezi această locație? Datele și istoricul rămân salvate.")) return;
+        await deleteLocation(location.id);
+      } else {
+        await updateLocation(location.id, { active: true });
+      }
       await loadLocations();
     } catch (err) {
       setError(err.message);
@@ -77,7 +80,7 @@ export default function Locations() {
       <div className="page-heading">
         <div>
           <h2>Locații</h2>
-          <p>Gestionează camerele, laboratoarele, dulapurile sau alte zone de stocare.</p>
+          <p>Locațiile nu se șterg definitiv; se arhivează pentru a păstra istoricul.</p>
         </div>
       </div>
 
@@ -107,7 +110,7 @@ export default function Locations() {
       <div className="table-wrapper">
         <table>
           <thead>
-            <tr><th>ID</th><th>Nume</th><th>Descriere</th><th>Acțiuni</th></tr>
+            <tr><th>ID</th><th>Nume</th><th>Descriere</th><th>Status</th><th>Acțiuni</th></tr>
           </thead>
           <tbody>
             {locations.map((location) => (
@@ -116,9 +119,19 @@ export default function Locations() {
                 <td>{location.name}</td>
                 <td>{location.description || "-"}</td>
                 <td>
+                  <span className={`badge ${location.active ? "badge-available" : "badge-retired"}`}>
+                    {location.active ? "Activă" : "Arhivată"}
+                  </span>
+                </td>
+                <td>
                   <div className="row-actions">
                     <button className="btn-secondary" onClick={() => startEdit(location)}>Editează</button>
-                    <button className="btn-danger" onClick={() => handleDelete(location.id)}>Șterge</button>
+                    <button
+                      className={location.active ? "btn-danger" : "btn-primary"}
+                      onClick={() => toggleActive(location)}
+                    >
+                      {location.active ? "Arhivează" : "Reactivează"}
+                    </button>
                   </div>
                 </td>
               </tr>
