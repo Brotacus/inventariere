@@ -3,7 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Inventariere</title>
+    <meta name="theme-color" content="#f4f8f8" />
+    <link rel="icon" type="image/png" href="/inventory-logo.png" />
+    <meta name="description" content="Platformă modernă pentru administrarea inventarului, împrumuturilor și locațiilor." />
+    <script>
+      (() => {
+        try {
+          const saved = localStorage.getItem("inventory-theme");
+          const theme = saved === "light" || saved === "dark"
+            ? saved
+            : (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.style.colorScheme = theme;
+        } catch (_) {}
+      })();
+    </script>
+    <title>Inventar · Laboratory Asset Management</title>
   </head>
   <body>
     <div id="root"></div>

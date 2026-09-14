@@ -1,19 +1,29 @@
-const getStatusBadge = (status) => {
-  const s = status ? status.toLowerCase() : "";
+import Icon from "./Icon";
 
-  if (s === "available") return <span className="badge badge-available">Disponibil</span>;
-  if (s === "loaned") return <span className="badge badge-loaned">Împrumutat</span>;
-  if (s === "broken") return <span className="badge badge-broken">Stricat</span>;
-  if (s === "lost") return <span className="badge badge-lost">Pierdut</span>;
-  if (s === "retired") return <span className="badge badge-retired">Scos din uz</span>;
-  if (s === "in_use") return <span className="badge badge-in-use">În uz</span>;
+export function StatusBadge({ status }) {
+  const normalized = (status || "").toUpperCase();
+  const labels = {
+    AVAILABLE: "Disponibil",
+    LOANED: "Împrumutat",
+    DEFECTIVE: "Defect",
+    BROKEN: "Stricat",
+    LOST: "Pierdut",
+    RETIRED: "Scos din uz",
+    IN_USE: "În uz",
+  };
+  const css = normalized.toLowerCase().replaceAll("_", "-");
+  return <span className={`badge badge-${css}`}>{labels[normalized] || status || "N/A"}</span>;
+}
 
-  return <span className="badge">{status || "N/A"}</span>;
-};
-
-export default function DeviceTable({ devices = [], onDelete, onEdit }) {
-  if (devices.length === 0) {
-    return <div className="empty-state">Nu există încă obiecte în inventar.</div>;
+export default function DeviceTable({ devices = [], locationMap = {}, onDelete, onOpen }) {
+  if (!devices.length) {
+    return (
+      <div className="empty-state">
+        <div className="empty-icon"><Icon name="inventory" size={28} /></div>
+        <h3>Niciun obiect găsit</h3>
+        <p>Schimbă filtrele sau adaugă primul obiect în inventar.</p>
+      </div>
+    );
   }
 
   return (
@@ -21,38 +31,47 @@ export default function DeviceTable({ devices = [], onDelete, onEdit }) {
       <table>
         <thead>
           <tr>
+            <th>Obiect</th>
             <th>Cod</th>
-            <th>Serie</th>
-            <th>Nume</th>
             <th>Categorie</th>
+            <th>Locație curentă</th>
             <th>Status</th>
-            <th>Locație ID</th>
-            <th>Responsabil ID</th>
-            <th>Acțiuni</th>
+            <th className="table-actions-heading">Acțiuni</th>
           </tr>
         </thead>
         <tbody>
-          {devices.map((device) => (
-            <tr key={device.id}>
-              <td>{device.code}</td>
-              <td>{device.serial_number || "-"}</td>
-              <td>{device.name}</td>
-              <td>{device.category}</td>
-              <td>{getStatusBadge(device.status)}</td>
-              <td>{device.location_id ?? "-"}</td>
-              <td>{device.responsible_person_id ?? "-"}</td>
-              <td>
-                <div className="row-actions">
-                  <button className="btn-secondary" onClick={() => onEdit(device)}>
-                    Editează
-                  </button>
-                  <button className="btn-danger" onClick={() => onDelete(device.id)}>
-                    Șterge
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
+          {devices.map((device) => {
+            const location = locationMap[device.location_id];
+            return (
+              <tr key={device.id} className="trackable-row" onDoubleClick={() => onOpen?.(device.id)}>
+                <td>
+                  <div className="object-cell">
+                    <div className="object-avatar">{(device.name || "?").charAt(0).toUpperCase()}</div>
+                    <div><strong>{device.name}</strong><span>{device.serial_number || "Fără serie"}</span></div>
+                  </div>
+                </td>
+                <td><code className="code-pill">{device.code || "-"}</code></td>
+                <td>{device.category}</td>
+                <td>
+                  <div className={`location-cell ${location ? "" : "missing"}`}>
+                    <Icon name="pin" size={15} />
+                    <span>{location?.name || "Locație nesetată"}</span>
+                  </div>
+                </td>
+                <td><StatusBadge status={device.status} /></td>
+                <td>
+                  <div className="row-actions right">
+                    <button className="icon-action" type="button" onClick={() => onOpen?.(device.id)} title="Urmărește obiectul">
+                      <Icon name="eye" size={17} />
+                    </button>
+                    <button className="icon-action danger" type="button" onClick={() => onDelete(device.id)} title="Șterge obiectul">
+                      <Icon name="trash" size={17} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
