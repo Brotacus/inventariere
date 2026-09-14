@@ -1,107 +1,63 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import DeviceTable from "../components/DeviceTable";
-import { getLocations, getPeople, updateDevice } from "../services/api";
+import Icon from "../components/Icon";
+import { getLocations } from "../services/api";
 
-export default function Inventory({ devices, onDelete, onUpdated }) {
-  const [editing, setEditing] = useState(null);
+export default function Inventory({ devices, onDelete, onOpen }) {
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
+  const [category, setCategory] = useState("");
   const [locations, setLocations] = useState([]);
-  const [people, setPeople] = useState([]);
-  const [error, setError] = useState("");
 
   useEffect(() => {
-    Promise.all([getLocations(false), getPeople(false)])
-      .then(([locationData, peopleData]) => {
-        setLocations(locationData);
-        setPeople(peopleData);
-      })
-      .catch((err) => setError(err.message));
-  }, []);
+    getLocations(true).then(setLocations).catch(() => setLocations([]));
+  }, [devices]);
 
-  function startEdit(device) {
-    setEditing({
-      ...device,
-      serial_number: device.serial_number || "",
-      location_id: device.location_id ?? "",
-      responsible_person_id: device.responsible_person_id ?? "",
-      description: device.description || "",
+  const locationMap = useMemo(
+    () => Object.fromEntries((locations || []).map((location) => [location.id, location])),
+    [locations]
+  );
+
+  const categories = useMemo(
+    () => [...new Set(devices.map((d) => d.category).filter(Boolean))].sort(),
+    [devices]
+  );
+
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return devices.filter((device) => {
+      const locationName = locationMap[device.location_id]?.name || "";
+      const matchesSearch = !needle || [device.name, device.code, device.serial_number, device.category, locationName]
+        .some((value) => String(value || "").toLowerCase().includes(needle));
+      const matchesStatus = !status || device.status === status;
+      const matchesCategory = !category || device.category === category;
+      return matchesSearch && matchesStatus && matchesCategory;
     });
-  }
-
-  async function saveEdit(event) {
-    event.preventDefault();
-
-    try {
-      await updateDevice(editing.id, {
-        name: editing.name,
-        category: editing.category,
-        serial_number: editing.serial_number || null,
-        status: editing.status,
-        location_id: editing.location_id ? Number(editing.location_id) : null,
-        responsible_person_id: editing.responsible_person_id ? Number(editing.responsible_person_id) : null,
-        description: editing.description || null,
-      });
-      setEditing(null);
-      await onUpdated();
-      setError("");
-    } catch (err) {
-      setError(err.message);
-    }
-  }
+  }, [devices, search, status, category, locationMap]);
 
   return (
-    <section>
-      <div className="page-heading">
+    <section className="page">
+      <div className="page-intro">
         <div>
-          <h2>Inventory</h2>
-          <p>Adminul poate edita sau șterge obiectele din inventar.</p>
+          <span className="page-kicker">ASSET REGISTRY</span>
+          <h2>Inventar</h2>
+          <p>Fiecare obiect are acum o locație curentă și un istoric de mutări care poate fi urmărit individual.</p>
+        </div>
+        <div className="count-chip"><strong>{filtered.length}</strong><span>din {devices.length}</span></div>
+      </div>
+
+      <div className="toolbar panel-toolbar">
+        <div className="search-box">
+          <Icon name="search" size={18} />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Caută după nume, cod, serie sau locație..." />
+        </div>
+        <div className="toolbar-filters">
+          <div className="select-wrap"><Icon name="filter" size={16} /><select value={status} onChange={(e) => setStatus(e.target.value)}><option value="">Toate statusurile</option><option value="AVAILABLE">Disponibile</option><option value="LOANED">Împrumutate</option><option value="IN_USE">În uz</option><option value="BROKEN">Stricate</option><option value="LOST">Pierdute</option><option value="RETIRED">Scoase din uz</option></select></div>
+          <select value={category} onChange={(e) => setCategory(e.target.value)}><option value="">Toate categoriile</option>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</select>
         </div>
       </div>
 
-      {error && <div className="error">{error}</div>}
-
-      {editing && (
-        <form className="admin-form edit-panel" onSubmit={saveEdit}>
-          <h3>Editare {editing.code}</h3>
-          <input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} required />
-          <input value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })} required />
-          <input placeholder="Serie" value={editing.serial_number} onChange={(e) => setEditing({ ...editing, serial_number: e.target.value })} />
-
-          <select
-            value={editing.status}
-            onChange={(e) => setEditing({ ...editing, status: e.target.value })}
-            disabled={editing.status === "LOANED"}
-          >
-            {editing.status === "LOANED" && <option value="LOANED">LOANED - returnează din Loans</option>}
-            <option value="AVAILABLE">AVAILABLE</option>
-            <option value="IN_USE">IN_USE</option>
-            <option value="BROKEN">BROKEN</option>
-            <option value="LOST">LOST</option>
-            <option value="RETIRED">RETIRED</option>
-          </select>
-
-          <select value={editing.location_id} onChange={(e) => setEditing({ ...editing, location_id: e.target.value })}>
-            <option value="">Fără locație</option>
-            {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
-          </select>
-
-          <select
-            value={editing.responsible_person_id}
-            onChange={(e) => setEditing({ ...editing, responsible_person_id: e.target.value })}
-            disabled={editing.status === "LOANED"}
-          >
-            <option value="">Fără persoană responsabilă</option>
-            {people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
-          </select>
-
-          <textarea value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} />
-          <div className="form-actions">
-            <button className="btn-primary" type="submit">Salvează</button>
-            <button className="btn-secondary" type="button" onClick={() => setEditing(null)}>Renunță</button>
-          </div>
-        </form>
-      )}
-
-      <DeviceTable devices={devices} onDelete={onDelete} onEdit={startEdit} />
+      <DeviceTable devices={filtered} locationMap={locationMap} onDelete={onDelete} onOpen={onOpen} />
     </section>
   );
 }

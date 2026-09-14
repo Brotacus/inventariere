@@ -59,3 +59,74 @@ class Log(Base):
     old_value = Column(Text, nullable=True)
     new_value = Column(Text, nullable=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class DeviceLocationHistory(Base):
+    __tablename__ = "device_location_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Names are intentionally snapshotted too. A tracking entry must stay readable
+    # even if a location is renamed later.
+    from_location_id = Column(Integer, nullable=True)
+    from_location_name = Column(String, nullable=True)
+    to_location_id = Column(Integer, nullable=False)
+    to_location_name = Column(String, nullable=False)
+    change_type = Column(String, default="MOVED", nullable=False)
+    changed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DeviceImage(Base):
+    __tablename__ = "device_images"
+
+    id = Column(Integer, primary_key=True, index=True)
+    device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    stored_name = Column(String, nullable=False)
+    original_name = Column(String, nullable=False)
+    content_type = Column(String, nullable=False)
+    uploaded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_type = Column(String, nullable=False, index=True)
+    category = Column(String, default="SYSTEM", nullable=False, index=True)
+    severity = Column(String, default="INFO", nullable=False)
+    entity_type = Column(String, nullable=True)
+    entity_id = Column(Integer, nullable=True)
+    device_id = Column(Integer, nullable=True, index=True)
+    loan_id = Column(Integer, nullable=True, index=True)
+    person_id = Column(Integer, nullable=True)
+    location_id = Column(Integer, nullable=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    details_json = Column(Text, nullable=True)
+    occurred_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_type = Column(String, nullable=False)
+    severity = Column(String, default="INFO", nullable=False)
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    device_id = Column(Integer, nullable=True)
+    loan_id = Column(Integer, nullable=True)
+    is_read = Column(Integer, default=0, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+
+class DevicePublicLink(Base):
+    __tablename__ = "device_public_links"
+
+    id = Column(Integer, primary_key=True, index=True)
+    device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    token = Column(String, nullable=False, unique=True, index=True)
+    is_active = Column(Integer, default=1, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    regenerated_at = Column(DateTime(timezone=True), nullable=True)

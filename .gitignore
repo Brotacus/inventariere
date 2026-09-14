@@ -11,6 +11,9 @@ backend/.env
 # Baza de date locala
 *.db
 
+# Imagini incarcate local de admin
+backend/uploads/
+
 # React
 frontend/node_modules/
 frontend/dist/
