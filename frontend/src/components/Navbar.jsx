@@ -1,15 +1,18 @@
 export default function Navbar({ onToggleSidebar }) {
   return (
     <header className="navbar">
-      <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+      <div className="navbar-left">
         <button
           className="menu-toggle-btn"
           onClick={onToggleSidebar}
-          aria-label="Deschide Meniul"
+          aria-label="Deschide meniul"
         >
           ☰
         </button>
-        <h1 style={{ color: "white" }}>Inventar</h1>
+        <div>
+          <h1>Inventar</h1>
+          <span className="navbar-subtitle">Panou administrare</span>
+        </div>
       </div>
     </header>
   );

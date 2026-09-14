@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
-import "./index.css";
-import { getDevices, deleteDevice } from "./services/api";
 
 import Navbar from "./components/Navbar";
 import Sidebar from "./components/Sidebar";
 import AddDevice from "./pages/AddDevice";
 import Dashboard from "./pages/Dashboard";
 import Inventory from "./pages/Inventory";
+import Loans from "./pages/Loans";
+import Locations from "./pages/Locations";
 import Logs from "./pages/Logs";
 import People from "./pages/People";
+import { deleteDevice, getDevices } from "./services/api";
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState("Dashboard");
   const [devices, setDevices] = useState([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [error, setError] = useState("");
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const loadDevices = useCallback(async () => {
     try {
@@ -30,62 +31,43 @@ export default function App() {
     loadDevices();
   }, [loadDevices]);
 
-  const handleDelete = async (id) => {
-    if (window.confirm("Sigur vrei să ștergi acest dispozitiv?")) {
-      try {
-        await deleteDevice(id);
-        loadDevices();
-      } catch (err) {
-        setError(err.message);
-      }
+  async function handleDeleteDevice(deviceId) {
+    if (!window.confirm("Sigur vrei să ștergi acest obiect?")) return;
+
+    try {
+      await deleteDevice(deviceId);
+      await loadDevices();
+    } catch (err) {
+      setError(err.message);
     }
-  };
+  }
 
   function renderPage() {
-    if (currentPage === "Dashboard") {
-      return <Dashboard devices={devices} />;
-    }
+    if (currentPage === "Dashboard") return <Dashboard devices={devices} />;
     if (currentPage === "Inventory") {
-      return <Inventory devices={devices} onDelete={handleDelete} />;
+      return <Inventory devices={devices} onDelete={handleDeleteDevice} onUpdated={loadDevices} />;
     }
-    if (currentPage === "Add Device") {
-      return <AddDevice onDeviceAdded={loadDevices} />;
-    }
-    if (currentPage === "People") {
-      return <People />;
-    }
-    if (currentPage === "Logs") {
-      return <Logs />;
-    }
+    if (currentPage === "Add Device") return <AddDevice onDeviceAdded={loadDevices} />;
+    if (currentPage === "People") return <People />;
+    if (currentPage === "Locations") return <Locations />;
+    if (currentPage === "Loans") return <Loans onInventoryChanged={loadDevices} />;
+    if (currentPage === "Logs") return <Logs />;
     return null;
   }
 
   return (
     <>
-      <Navbar onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
-        {isSidebarOpen && (
-            <div 
-        className="sidebar-overlay"
-        onClick={() => setIsSidebarOpen(false)}
-      />
-        )}
+      <Navbar onToggleSidebar={() => setSidebarOpen(true)} />
       <div className="app-layout">
         <Sidebar
-        isOpen={isSidebarOpen}
+          isOpen={sidebarOpen}
           currentPage={currentPage}
-          setCurrentPage={(page) => {
-            setCurrentPage(page);
-            setIsSidebarOpen(false);
-          }}
-          onClose={() => setIsSidebarOpen(false)}
+          setCurrentPage={setCurrentPage}
+          onClose={() => setSidebarOpen(false)}
         />
-    
+
         <main>
-          {error && (
-            <div className="error">
-              Backend indisponibil: {error}
-            </div>
-          )}
+          {error && <div className="error">Backend indisponibil: {error}</div>}
           {renderPage()}
         </main>
       </div>
