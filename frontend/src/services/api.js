@@ -130,7 +130,7 @@ export function deleteDeviceImage(deviceId, imageId) {
   return apiRequest(`/devices/${deviceId}/images/${imageId}`, { method: "DELETE" });
 }
 
-export function getPeople(includeInactive = true) { return apiRequest(`/people/?include_inactive=${includeInactive}`); }
+export function getPeople(includeInactive = true, role = "") { return apiRequest(`/people/?include_inactive=${includeInactive}${role ? `&role=${encodeURIComponent(role)}` : ""}`); }
 export function createPerson(person) { return apiRequest("/people/", { method: "POST", body: JSON.stringify(person) }); }
 export function updatePerson(personId, person) { return apiRequest(`/people/${personId}`, { method: "PUT", body: JSON.stringify(person) }); }
 export function deactivatePerson(personId) { return apiRequest(`/people/${personId}`, { method: "DELETE" }); }

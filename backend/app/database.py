@@ -52,6 +52,17 @@ def ensure_schema_compatibility():
     if "locations" not in inspector.get_table_names():
         return
 
+    # Only initialize roles once; subsequent restarts must preserve explicit edits.
+    if "people" in inspector.get_table_names():
+        people_columns = {column["name"] for column in inspector.get_columns("people")}
+        with engine.begin() as connection:
+            if "is_borrower" not in people_columns:
+                connection.execute(text("ALTER TABLE people ADD COLUMN is_borrower INTEGER NOT NULL DEFAULT 1"))
+            if "is_responsible" not in people_columns:
+                connection.execute(text("ALTER TABLE people ADD COLUMN is_responsible INTEGER NOT NULL DEFAULT 0"))
+                # Legacy assignments are ambiguous: preserve them for admin review.
+                connection.execute(text("UPDATE people SET is_responsible = 1 WHERE id IN (SELECT responsible_person_id FROM devices WHERE responsible_person_id IS NOT NULL)"))
+
     columns = {column["name"] for column in inspector.get_columns("locations")}
     if "active" not in columns:
         with engine.begin() as connection:

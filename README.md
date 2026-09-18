@@ -524,3 +524,7 @@ github.com/Brotacus/inventariere
 ## License
 
 This project is currently intended for educational and internal development purposes.
+
+## Roluri pentru persoane responsabile
+
+Actualizarea separă responsabilitatea obiectelor de împrumuturi. Ghidul complet de instalare, migrare și utilizare este în [INSTALARE_ROLURI.md](INSTALARE_ROLURI.md).

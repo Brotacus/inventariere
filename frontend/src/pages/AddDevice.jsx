@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Icon from "../components/Icon";
-import { createDevice, getLocations, uploadDeviceImages } from "../services/api";
+import { createDevice, getPeople, getLocations, uploadDeviceImages } from "../services/api";
 
 const initialForm = {
   name: "",
@@ -9,17 +9,20 @@ const initialForm = {
   serial_number: "",
   description: "",
   location_id: "",
+  responsible_person_id: "",
 };
 
 export default function AddDevice({ onDeviceAdded, onNavigate }) {
   const [form, setForm] = useState(initialForm);
   const [locations, setLocations] = useState([]);
+  const [responsibles, setResponsibles] = useState([]);
   const [images, setImages] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    getPeople(false, "responsible").then(setResponsibles).catch((err) => setError(err.message));
     getLocations(true)
       .then((data) => setLocations((data || []).filter((location) => location.active !== false)))
       .catch((err) => setError(err.message));
@@ -59,6 +62,7 @@ export default function AddDevice({ onDeviceAdded, onNavigate }) {
       const newDevice = await createDevice({
         ...form,
         location_id: Number(form.location_id),
+        responsible_person_id: form.responsible_person_id ? Number(form.responsible_person_id) : null,
         serial_number: form.serial_number || null,
         description: form.description || null,
       });
@@ -121,6 +125,7 @@ export default function AddDevice({ onDeviceAdded, onNavigate }) {
             <label className="field"><span>Categorie *</span><input name="category" placeholder="Ex. Instrumentație" value={form.category} onChange={handleChange} required /></label>
             <label className="field"><span>Număr de serie</span><input name="serial_number" placeholder="SN-2026-001" value={form.serial_number} onChange={handleChange} /></label>
             <label className="field"><span>Status inițial</span><select name="status" value={form.status} onChange={handleChange}><option value="AVAILABLE">Disponibil</option><option value="IN_USE">În uz</option><option value="BROKEN">Stricat</option><option value="LOST">Pierdut</option><option value="RETIRED">Scos din uz</option></select></label>
+            <label className="field"><span>Responsabil obiect</span><select name="responsible_person_id" value={form.responsible_person_id} onChange={handleChange}><option value="">Fără responsabil</option>{responsibles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select><small>Se configurează în Persoane. Rămâne asociat și în timpul împrumuturilor.</small></label>
             <label className="field field-location">
               <span><Icon name="pin" size={14} /> Locație inițială *</span>
               <select name="location_id" value={form.location_id} onChange={handleChange} required disabled={!locations.length}>

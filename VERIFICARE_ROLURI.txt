@@ -1,0 +1,5 @@
+Bază: Brotacus/inventariere commit 6103514
+Backend: 7 teste pytest trecute (Python 3.12).
+Frontend: npm ci și npm run build reușite (Vite 7.3.6).
+Testele în browser nu au putut fi rulate: descărcarea Chromium a fost blocată de rețea.
+SMTP real și mediul WSL al utilizatorului nu au fost testate.
