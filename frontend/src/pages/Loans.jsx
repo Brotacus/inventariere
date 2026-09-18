@@ -13,7 +13,7 @@ export default function Loans({ onInventoryChanged }) {
 
   async function loadData() {
     try {
-      const [loanData, deviceData, peopleData] = await Promise.all([getLoans(filter), getDevices(), getPeople(false)]);
+      const [loanData, deviceData, peopleData] = await Promise.all([getLoans(filter), getDevices(), getPeople(false, "borrower")]);
       setLoans(loanData); setDevices(deviceData); setPeople(peopleData); setError("");
     } catch (err) { setError(err.message); }
   }
@@ -49,7 +49,7 @@ export default function Loans({ onInventoryChanged }) {
         <div className="loan-card-copy"><div className="round-icon inverted"><Icon name="loans" size={20} /></div><div><span className="panel-eyebrow light">ÎMPRUMUT NOU</span><h3>Predă un obiect</h3><p>Selectează obiectul și persoana responsabilă.</p></div></div>
         <form className="loan-inline-form" onSubmit={handleSubmit}>
           <label><span>Obiect disponibil</span><select value={form.device_id} onChange={(e) => setForm({ ...form, device_id: e.target.value })} required><option value="">Selectează obiectul</option>{availableDevices.map((device) => <option key={device.id} value={device.id}>{device.code} — {device.name}</option>)}</select></label>
-          <label><span>Persoană</span><select value={form.person_id} onChange={(e) => setForm({ ...form, person_id: e.target.value })} required><option value="">Selectează persoana</option>{people.map((person) => <option key={person.id} value={person.id}>{person.name}{person.email ? ` · ${person.email}` : ""}</option>)}</select></label>
+          <label><span>Persoană care împrumută</span><select value={form.person_id} onChange={(e) => setForm({ ...form, person_id: e.target.value })} required><option value="">Selectează persoana</option>{people.map((person) => <option key={person.id} value={person.id}>{person.name}{person.email ? ` · ${person.email}` : ""}</option>)}</select></label>
           <button className="btn btn-light" type="submit"><Icon name="arrow" size={17} /> Înregistrează</button>
         </form>
       </div>

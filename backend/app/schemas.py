@@ -36,12 +36,16 @@ class DeviceResponse(DeviceBase):
 
 
 class PersonCreate(BaseModel):
+    is_responsible: bool = False
+    is_borrower: bool = True
     name: str
     email: str | None = None
     phone: str | None = None
 
 
 class PersonUpdate(BaseModel):
+    is_responsible: bool | None = None
+    is_borrower: bool | None = None
     name: str | None = None
     email: str | None = None
     phone: str | None = None
@@ -49,6 +53,8 @@ class PersonUpdate(BaseModel):
 
 
 class PersonResponse(BaseModel):
+    is_responsible: bool
+    is_borrower: bool
     id: int
     name: str
     email: str | None = None

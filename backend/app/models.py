@@ -27,6 +27,8 @@ class Person(Base):
     name = Column(String, nullable=False)
     email = Column(String, nullable=True)
     phone = Column(String, nullable=True)
+    is_responsible = Column(Integer, default=0, nullable=False)
+    is_borrower = Column(Integer, default=1, nullable=False)
     active = Column(Integer, default=1, nullable=False)
 
 

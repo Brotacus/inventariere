@@ -144,6 +144,8 @@ def validate_references(
         )
         if person is None:
             raise HTTPException(status_code=404, detail="Responsible person not found")
+        if not person.is_responsible:
+            raise HTTPException(status_code=409, detail="Persoana nu are rol de responsabil.")
         if not person.active:
             raise HTTPException(status_code=409, detail="Responsible person is inactive")
 
@@ -643,14 +645,6 @@ def update_device(
                 status_code=409,
                 detail="Device has an active loan. Return it from the Loans section first",
             )
-        if (
-            "responsible_person_id" in update_data
-            and update_data["responsible_person_id"] != active_loan.person_id
-        ):
-            raise HTTPException(
-                status_code=409,
-                detail="Responsible person is controlled by the active loan",
-            )
     elif update_data.get("status") == "LOANED":
         raise HTTPException(
             status_code=409,
@@ -679,6 +673,7 @@ def update_device(
         update_data["description"] = update_data["description"].strip()
 
     old_value = device_snapshot(db_device)
+    old_responsible_id = db_device.responsible_person_id
     old_status = db_device.status
     old_location = get_location(db, db_device.location_id)
     new_location = None
@@ -741,6 +736,19 @@ def update_device(
                 "to_location_id": new_location.id,
                 "to_location_name": new_location.name,
             },
+            notify=True,
+        )
+
+    if db_device.responsible_person_id != old_responsible_id:
+        old_person = db.get(models.Person, old_responsible_id) if old_responsible_id else None
+        new_person = db.get(models.Person, db_device.responsible_person_id) if db_device.responsible_person_id else None
+        record_activity(
+            db, event_type="DEVICE_RESPONSIBLE_CHANGED", category="INVENTORY",
+            severity="INFO", title="Responsabil schimbat",
+            description=f"{db_device.code}: {old_person.name if old_person else 'Fără responsabil'} → {new_person.name if new_person else 'Fără responsabil'}.",
+            entity_type="device", entity_id=db_device.id, device_id=db_device.id,
+            person_id=db_device.responsible_person_id,
+            details={"old_responsible_person_id": old_responsible_id, "new_responsible_person_id": db_device.responsible_person_id},
             notify=True,
         )
 

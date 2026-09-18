@@ -9,6 +9,18 @@ from app.database import get_db
 router = APIRouter(prefix="/people", tags=["People"])
 
 
+def ensure_no_assignments(db: Session, person_id: int):
+    if db.query(models.Device).filter(models.Device.responsible_person_id == person_id).first():
+        raise HTTPException(status_code=409, detail="Reasociază sau elimină mai întâi obiectele acestei persoane responsabile.")
+
+
+@router.get("/{person_id}/devices", response_model=list[schemas.DeviceResponse])
+def responsible_devices(person_id: int, db: Session = Depends(get_db)):
+    if db.get(models.Person, person_id) is None:
+        raise HTTPException(status_code=404, detail="Person not found")
+    return db.query(models.Device).filter(models.Device.responsible_person_id == person_id).order_by(models.Device.id).all()
+
+
 def person_snapshot(person: models.Person) -> str:
     return json.dumps(
         {
@@ -17,6 +29,8 @@ def person_snapshot(person: models.Person) -> str:
             "email": person.email,
             "phone": person.phone,
             "active": bool(person.active),
+            "is_responsible": bool(person.is_responsible),
+            "is_borrower": bool(person.is_borrower),
         },
         ensure_ascii=False,
     )
@@ -25,9 +39,14 @@ def person_snapshot(person: models.Person) -> str:
 @router.get("/", response_model=list[schemas.PersonResponse])
 def get_people(
     include_inactive: bool = Query(True),
+    role: str | None = Query(None, pattern="^(responsible|borrower)$"),
     db: Session = Depends(get_db),
 ):
     query = db.query(models.Person)
+    if role == "responsible":
+        query = query.filter(models.Person.is_responsible == 1)
+    elif role == "borrower":
+        query = query.filter(models.Person.is_borrower == 1)
 
     if not include_inactive:
         query = query.filter(models.Person.active == 1)
@@ -50,11 +69,16 @@ def create_person(person: schemas.PersonCreate, db: Session = Depends(get_db)):
     if not person.name.strip():
         raise HTTPException(status_code=400, detail="Name cannot be empty")
 
+    if not person.is_responsible and not person.is_borrower:
+        raise HTTPException(status_code=400, detail="Selectează cel puțin un rol.")
+
     db_person = models.Person(
         name=person.name.strip(),
         email=person.email.strip() if person.email else None,
         phone=person.phone.strip() if person.phone else None,
         active=1,
+        is_responsible=int(person.is_responsible),
+        is_borrower=int(person.is_borrower),
     )
 
     db.add(db_person)
@@ -96,7 +120,15 @@ def update_person(
     if "phone" in update_data and update_data["phone"]:
         update_data["phone"] = update_data["phone"].strip()
 
-    if update_data.get("active") is False:
+    for field in ("active", "is_responsible", "is_borrower"):
+        if field in update_data and update_data[field] is None:
+            raise HTTPException(status_code=400, detail=f"{field} cannot be null")
+    if not update_data.get("is_responsible", db_person.is_responsible) and not update_data.get("is_borrower", db_person.is_borrower):
+        raise HTTPException(status_code=400, detail="Selectează cel puțin un rol.")
+    if update_data.get("active") is False or update_data.get("is_responsible") is False:
+        ensure_no_assignments(db, person_id)
+
+    if update_data.get("active") is False or update_data.get("is_borrower") is False:
         active_loan = (
             db.query(models.Loan)
             .filter(
@@ -154,6 +186,8 @@ def deactivate_person(person_id: int, db: Session = Depends(get_db)):
             status_code=409,
             detail="Person has an active loan and cannot be deactivated",
         )
+
+    ensure_no_assignments(db, person_id)
 
     if not db_person.active:
         return {"message": "Person is already inactive"}

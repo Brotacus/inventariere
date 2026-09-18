@@ -7,6 +7,8 @@ import {
   getDevicePublicAccess,
   getDeviceTracking,
   getLocations,
+  getPeople,
+  getLoans,
   mediaUrl,
   regenerateDevicePublicAccess,
   revokeDevicePublicAccess,
@@ -38,6 +40,10 @@ function formatDate(value) {
 export default function DeviceDetail({ deviceId, onBack, onChanged }) {
   const [tracking, setTracking] = useState(null);
   const [locations, setLocations] = useState([]);
+  const [people, setPeople] = useState([]);
+  const [responsibleId, setResponsibleId] = useState("");
+  const [savingResponsible, setSavingResponsible] = useState(false);
+  const [currentLoan, setCurrentLoan] = useState(null);
   const [locationId, setLocationId] = useState("");
   const [loading, setLoading] = useState(true);
   const [savingLocation, setSavingLocation] = useState(false);
@@ -51,14 +57,19 @@ export default function DeviceDetail({ deviceId, onBack, onChanged }) {
   async function load() {
     setLoading(true);
     try {
-      const [trackingData, locationData, accessData] = await Promise.all([
+      const [trackingData, locationData, accessData, peopleData, loansData] = await Promise.all([
         getDeviceTracking(deviceId),
         getLocations(true),
         getDevicePublicAccess(deviceId, publicBaseUrl).catch((err) => {
           if (err.status === 404) return null;
           throw err;
         }),
+        getPeople(true),
+        getLoans("ACTIVE"),
       ]);
+      setPeople(peopleData);
+      setCurrentLoan(loansData.find((loan) => loan.device_id === Number(deviceId)) || null);
+      setResponsibleId(String(trackingData.device.responsible_person_id || ""));
       setTracking(trackingData);
       setLocations((locationData || []).filter((location) => location.active !== false));
       setLocationId(String(trackingData.device.location_id || ""));
@@ -79,6 +90,16 @@ export default function DeviceDetail({ deviceId, onBack, onChanged }) {
     () => [...(tracking?.location_history || [])].sort((a, b) => new Date(b.changed_at) - new Date(a.changed_at)),
     [tracking]
   );
+
+  async function handleResponsibleChange() {
+    setSavingResponsible(true); setError(""); setMessage("");
+    try {
+      await updateDevice(deviceId, { responsible_person_id: responsibleId ? Number(responsibleId) : null });
+      await load(); await onChanged?.();
+      setMessage("Responsabilul obiectului a fost actualizat.");
+    } catch (err) { setError(err.message); }
+    finally { setSavingResponsible(false); }
+  }
 
   async function handleLocationChange() {
     if (!locationId) return;
@@ -304,6 +325,16 @@ export default function DeviceDetail({ deviceId, onBack, onChanged }) {
 
       <div className="detail-grid">
         <div className="detail-main-column">
+          <div className="panel tracking-panel">
+            <div className="panel-header"><h3>Responsabil obiect</h3></div>
+            <p>Responsabil actual: <strong>{people.find((p) => p.id === device.responsible_person_id)?.name || "Fără responsabil"}</strong></p>
+            <p>Împrumutat către: <strong>{currentLoan?.person_name || "Nu există un împrumut activ"}</strong></p>
+            <div className="location-editor">
+              <label className="field"><span>Asociază o persoană responsabilă</span><select value={responsibleId} onChange={(e) => setResponsibleId(e.target.value)}><option value="">Fără responsabil</option>{people.filter((p) => (p.active && p.is_responsible) || p.id === device.responsible_person_id).map((p) => <option key={p.id} value={p.id} disabled={!p.active || !p.is_responsible}>{p.name}{!p.active ? " (inactiv)" : ""}</option>)}</select></label>
+              <button type="button" className="btn btn-primary" disabled={savingResponsible || responsibleId === String(device.responsible_person_id || "")} onClick={handleResponsibleChange}>{savingResponsible ? "Se salvează..." : "Salvează responsabilul"}</button>
+            </div>
+            <p className="location-editor-note">Împrumutarea și returnarea păstrează responsabilul. Schimbarea este înregistrată în jurnal.</p>
+          </div>
           <div className="panel tracking-panel">
             <div className="panel-header">
               <div><span className="panel-eyebrow">LOCATION TRACKING</span><h3>Mută obiectul</h3></div>

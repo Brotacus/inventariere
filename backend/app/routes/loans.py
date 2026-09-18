@@ -63,6 +63,8 @@ def create_loan(loan: schemas.LoanCreate, db: Session = Depends(get_db)):
     person = db.query(models.Person).filter(models.Person.id == loan.person_id).first()
     if person is None:
         raise HTTPException(status_code=404, detail="Person not found")
+    if not person.is_borrower:
+        raise HTTPException(status_code=409, detail="Persoana nu are rol de împrumutător.")
     if not person.active:
         raise HTTPException(status_code=409, detail="Person is inactive")
 
@@ -83,7 +85,6 @@ def create_loan(loan: schemas.LoanCreate, db: Session = Depends(get_db)):
     db_loan = models.Loan(device_id=loan.device_id, person_id=loan.person_id, status="ACTIVE")
     db.add(db_loan)
     device.status = "LOANED"
-    device.responsible_person_id = person.id
     db.flush()
 
     db.add(
@@ -238,7 +239,6 @@ def return_loan(loan_id: int, db: Session = Depends(get_db)):
     db_loan.return_date = datetime.now(timezone.utc)
     if device:
         device.status = "AVAILABLE"
-        device.responsible_person_id = None
 
     db.flush()
     db.add(

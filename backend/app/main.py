@@ -5,11 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.database import Base, engine
+from app.database import Base, engine, ensure_schema_compatibility
 from app.routes import auth, admin, devices, journal, locations, loans, logs, notifications, people, public_assets
 from app.services.auth_service import is_session_valid
 
 Base.metadata.create_all(bind=engine)
+ensure_schema_compatibility()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = BASE_DIR / "uploads"
