@@ -15,7 +15,7 @@ export function StatusBadge({ status }) {
   return <span className={`badge badge-${css}`}>{labels[normalized] || status || "N/A"}</span>;
 }
 
-export default function DeviceTable({ devices = [], locationMap = {}, onDelete, onOpen }) {
+export default function DeviceTable({ devices = [], locationMap = {}, onDelete, onOpen, deleting = false }) {
   if (!devices.length) {
     return (
       <div className="empty-state">
@@ -43,7 +43,9 @@ export default function DeviceTable({ devices = [], locationMap = {}, onDelete, 
           {devices.map((device) => {
             const location = locationMap[device.location_id];
             return (
-              <tr key={device.id} className="trackable-row" onDoubleClick={() => onOpen?.(device.id)}>
+              <tr key={device.id} className="trackable-row" onDoubleClick={(event) => {
+                if (!event.target.closest("button, a, input, select")) onOpen?.(device.id);
+              }}>
                 <td>
                   <div className="object-cell">
                     <div className="object-avatar">{(device.name || "?").charAt(0).toUpperCase()}</div>
@@ -61,10 +63,10 @@ export default function DeviceTable({ devices = [], locationMap = {}, onDelete, 
                 <td><StatusBadge status={device.status} /></td>
                 <td>
                   <div className="row-actions right">
-                    <button className="icon-action" type="button" onClick={() => onOpen?.(device.id)} title="Urmărește obiectul">
+                    <button className="icon-action" type="button" onClick={() => onOpen?.(device.id)} title="Urmărește obiectul" aria-label={`Deschide fișa ${device.name}`}>
                       <Icon name="eye" size={17} />
                     </button>
-                    <button className="icon-action danger" type="button" onClick={() => onDelete(device.id)} title="Șterge obiectul">
+                    <button className="icon-action danger" type="button" disabled={deleting} onClick={() => onDelete(device.id)} title="Șterge obiectul" aria-label={`Șterge ${device.name}`}>
                       <Icon name="trash" size={17} />
                     </button>
                   </div>

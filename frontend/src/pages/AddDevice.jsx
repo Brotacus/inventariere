@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import Icon from "../components/Icon";
+import usePendingAction from "../hooks/usePendingAction";
+import useLatestRequest from "../hooks/useLatestRequest";
+import { validateImages } from "../hooks/imageSelection";
 import { createDevice, getPeople, getLocations, uploadDeviceImages } from "../services/api";
 
 const initialForm = {
@@ -19,30 +22,44 @@ export default function AddDevice({ onDeviceAdded, onNavigate }) {
   const [images, setImages] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [previews, setPreviews] = useState([]);
+  const [loadingOptions, setLoadingOptions] = useState(true);
+  const [optionsError, setOptionsError] = useState("");
+  const [locationsLoaded, setLocationsLoaded] = useState(false);
+  const { busy: saving, beginAction, endAction } = usePendingAction();
+  const requests = useLatestRequest();
 
-  useEffect(() => {
-    getPeople(false, "responsible").then(setResponsibles).catch((err) => setError(err.message));
-    getLocations(true)
-      .then((data) => setLocations((data || []).filter((location) => location.active !== false)))
-      .catch((err) => setError(err.message));
-  }, []);
+  async function loadOptions() {
+    const request = requests.begin();
+    setLoadingOptions(true);
+    setOptionsError("");
+    const [people, locations] = await Promise.allSettled([getPeople(false, "responsible"), getLocations(true)]);
+    if (!requests.isCurrent(request)) return;
+    if (people.status === "fulfilled") setResponsibles(people.value);
+    if (locations.status === "fulfilled") {
+      setLocations((locations.value || []).filter((location) => location.active !== false));
+      setLocationsLoaded(true);
+    }
+    setOptionsError([people, locations].filter(result => result.status === "rejected").map(result => result.reason.message).join(" "));
+    setLoadingOptions(false);
+  }
+  useEffect(() => { loadOptions(); }, []);
 
-  const previews = useMemo(
-    () => images.map((file) => ({ file, url: URL.createObjectURL(file) })),
-    [images]
-  );
-
-  useEffect(() => () => previews.forEach((item) => URL.revokeObjectURL(item.url)), [previews]);
+  useLayoutEffect(() => {
+    const current = images.map((file) => ({ file, url: URL.createObjectURL(file) }));
+    setPreviews(current);
+    return () => current.forEach((item) => URL.revokeObjectURL(item.url));
+  }, [images]);
 
   function handleChange(event) {
-    setForm({ ...form, [event.target.name]: event.target.value });
+    const { name, value } = event.target;
+    setForm(current => ({ ...current, [name]: value }));
   }
 
   function handleImages(event) {
-    const selected = Array.from(event.target.files || []);
-    const allowed = selected.filter((file) => ["image/jpeg", "image/png", "image/webp"].includes(file.type));
-    setImages((current) => [...current, ...allowed].slice(0, 10));
+    const selection = validateImages(Array.from(event.target.files || []), 10 - images.length);
+    setImages((current) => [...current, ...selection.files]);
+    setError(selection.error);
     event.target.value = "";
   }
 
@@ -52,15 +69,18 @@ export default function AddDevice({ onDeviceAdded, onNavigate }) {
 
   async function handleSubmit(event) {
     event.preventDefault();
-    setSaving(true);
+    if (!beginAction()) return;
     setMessage("");
     setError("");
 
     try {
       if (!form.location_id) throw new Error("Selectează locația inițială a obiectului.");
+      if (!form.name.trim() || !form.category.trim()) throw new Error("Completează numele și categoria obiectului.");
 
       const newDevice = await createDevice({
         ...form,
+        name: form.name.trim(),
+        category: form.category.trim(),
         location_id: Number(form.location_id),
         responsible_person_id: form.responsible_person_id ? Number(form.responsible_person_id) : null,
         serial_number: form.serial_number || null,
@@ -88,7 +108,7 @@ export default function AddDevice({ onDeviceAdded, onNavigate }) {
     } catch (err) {
       setError(err.message);
     } finally {
-      setSaving(false);
+      endAction();
     }
   }
 
@@ -103,13 +123,13 @@ export default function AddDevice({ onDeviceAdded, onNavigate }) {
       </div>
 
       <div className="form-layout">
-        <form className="panel form-panel" onSubmit={handleSubmit}>
+        <form className="panel form-panel" onSubmit={handleSubmit} aria-busy={saving || loadingOptions}>
           <div className="panel-header form-panel-header">
             <div><span className="panel-eyebrow">DETALII OBIECT</span><h3>Identitate și localizare</h3></div>
             <div className="form-step">01</div>
           </div>
 
-          {!locations.length && (
+          {!loadingOptions && locationsLoaded && !locations.length && (
             <div className="alert alert-error location-required-alert">
               <Icon name="pin" size={18} />
               <div>
@@ -120,10 +140,11 @@ export default function AddDevice({ onDeviceAdded, onNavigate }) {
             </div>
           )}
 
+          <fieldset className="form-fields" disabled={saving || loadingOptions}>
           <div className="form-grid two-cols">
-            <label className="field"><span>Nume obiect *</span><input name="name" placeholder="Ex. Osciloscop Hantek" value={form.name} onChange={handleChange} required /></label>
-            <label className="field"><span>Categorie *</span><input name="category" placeholder="Ex. Instrumentație" value={form.category} onChange={handleChange} required /></label>
-            <label className="field"><span>Număr de serie</span><input name="serial_number" placeholder="SN-2026-001" value={form.serial_number} onChange={handleChange} /></label>
+            <label className="field"><span>Nume obiect *</span><input name="name" maxLength={200} placeholder="Ex. Osciloscop Hantek" value={form.name} onChange={handleChange} required /></label>
+            <label className="field"><span>Categorie *</span><input name="category" maxLength={200} placeholder="Ex. Instrumentație" value={form.category} onChange={handleChange} required /></label>
+            <label className="field"><span>Număr de serie</span><input name="serial_number" maxLength={255} placeholder="SN-2026-001" value={form.serial_number} onChange={handleChange} /></label>
             <label className="field"><span>Status inițial</span><select name="status" value={form.status} onChange={handleChange}><option value="AVAILABLE">Disponibil</option><option value="IN_USE">În uz</option><option value="BROKEN">Stricat</option><option value="LOST">Pierdut</option><option value="RETIRED">Scos din uz</option></select></label>
             <label className="field"><span>Responsabil obiect</span><select name="responsible_person_id" value={form.responsible_person_id} onChange={handleChange}><option value="">Fără responsabil</option>{responsibles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select><small>Se configurează în Persoane. Rămâne asociat și în timpul împrumuturilor.</small></label>
             <label className="field field-location">
@@ -135,7 +156,7 @@ export default function AddDevice({ onDeviceAdded, onNavigate }) {
             </label>
           </div>
 
-          <label className="field"><span>Descriere</span><textarea name="description" placeholder="Detalii utile, configurație, observații..." value={form.description} onChange={handleChange} /></label>
+          <label className="field"><span>Descriere</span><textarea name="description" maxLength={10000} placeholder="Detalii utile, configurație, observații..." value={form.description} onChange={handleChange} /></label>
 
           <div className="asset-upload-section">
             <div className="upload-heading">
@@ -155,20 +176,23 @@ export default function AddDevice({ onDeviceAdded, onNavigate }) {
                 {previews.map((item, index) => (
                   <div className="pending-image" key={`${item.file.name}-${index}`}>
                     <img src={item.url} alt={item.file.name} />
-                    <button type="button" onClick={() => removeImage(index)} title="Elimină imaginea"><Icon name="close" size={14} /></button>
+                    <button type="button" onClick={() => removeImage(index)} title="Elimină imaginea" aria-label={`Elimină fotografia ${item.file.name}`}><Icon name="close" size={14} /></button>
                     <span>{item.file.name}</span>
                   </div>
                 ))}
               </div>
             )}
           </div>
+          </fieldset>
 
-          {message && <div className="alert alert-success"><Icon name="check" size={18} /><span>{message}</span></div>}
-          {error && <div className="alert alert-error"><Icon name="alert" size={18} /><span>{error}</span></div>}
+          {loadingOptions && <p role="status">Se încarcă locațiile și responsabilii…</p>}
+          {optionsError && <div className="alert alert-error" role="alert"><Icon name="alert" size={18} /><span>{optionsError}</span><button type="button" className="text-button" disabled={loadingOptions || saving} onClick={loadOptions}>Reîncearcă încărcarea listelor</button></div>}
+          {message && <div className="alert alert-success" role="status"><Icon name="check" size={18} /><span>{message}</span></div>}
+          {error && <div className="alert alert-error" role="alert"><Icon name="alert" size={18} /><span>{error}</span></div>}
 
           <div className="form-footer">
-            <button type="button" className="btn btn-ghost" onClick={() => onNavigate?.("Inventory")}>Anulează</button>
-            <button className="btn btn-primary" type="submit" disabled={saving || !locations.length}><Icon name="plus" size={17} />{saving ? "Se salvează..." : "Adaugă în inventar"}</button>
+            <button type="button" disabled={saving} className="btn btn-ghost" onClick={() => onNavigate?.("Inventory")}>Anulează</button>
+            <button className="btn btn-primary" type="submit" disabled={saving || loadingOptions || !locations.length}><Icon name="plus" size={17} />{saving ? "Se salvează..." : "Adaugă în inventar"}</button>
           </div>
         </form>
 

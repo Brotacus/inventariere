@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Icon from "./Icon";
+import useDialogFocus from "../hooks/useDialogFocus";
 
 const destinations = [
   { page: "Dashboard", label: "Dashboard", description: "Prezentare generală și indicatori", icon: "dashboard" },
@@ -15,13 +16,18 @@ const destinations = [
 
 export default function CommandPalette({ isOpen, currentPage, onClose, onNavigate }) {
   const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef(null);
+  const dialogRef = useRef(null);
+  const resultsRef = useRef(null);
+  const resultsId = useId();
+
+  useDialogFocus({ active: isOpen, dialogRef, initialFocusRef: inputRef, onClose });
 
   useEffect(() => {
     if (!isOpen) return;
     setQuery("");
-    const timer = window.setTimeout(() => inputRef.current?.focus(), 40);
-    return () => window.clearTimeout(timer);
+    setActiveIndex(0);
   }, [isOpen]);
 
   const filtered = useMemo(() => {
@@ -30,29 +36,68 @@ export default function CommandPalette({ isOpen, currentPage, onClose, onNavigat
     return destinations.filter((item) => `${item.label} ${item.description}`.toLowerCase().includes(needle));
   }, [query]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    resultsRef.current?.children[activeIndex]?.scrollIntoView({ block: "nearest", behavior: "instant" });
+  }, [activeIndex, isOpen, filtered]);
+
+  function selectDestination(item) {
+    if (!item) return;
+    onNavigate(item.page);
+    onClose();
+  }
+
+  function handleSearchKey(event) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!filtered.length) return;
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      setActiveIndex((current) => (current + step + filtered.length) % filtered.length);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      selectDestination(filtered[activeIndex]);
+    }
+  }
+
   if (!isOpen) return null;
 
   return (
-    <div className="command-backdrop" onMouseDown={onClose}>
-      <div className="command-palette" onMouseDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Navigare rapidă">
+    <div className="command-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="command-palette" role="dialog" aria-modal="true" aria-label="Navigare rapidă" tabIndex={-1}>
         <div className="command-search">
           <Icon name="search" size={19} />
           <input
             ref={inputRef}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => { setQuery(event.target.value); setActiveIndex(0); }}
+            onKeyDown={handleSearchKey}
             placeholder="Caută o secțiune..."
+            aria-label="Caută o secțiune de administrare"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="true"
+            aria-controls={resultsId}
+            aria-activedescendant={filtered[activeIndex] ? `${resultsId}-${activeIndex}` : undefined}
           />
           <kbd>ESC</kbd>
+          <button type="button" className="icon-button command-close" onClick={onClose} aria-label="Închide navigarea rapidă" title="Închide navigarea rapidă">
+            <Icon name="close" size={18} />
+          </button>
         </div>
 
         <div className="command-section-label">NAVIGARE RAPIDĂ</div>
-        <div className="command-results">
-          {filtered.map((item) => (
+        <div className="command-results" id={resultsId} ref={resultsRef} role="listbox" aria-label="Secțiuni de administrare">
+          {filtered.map((item, index) => (
             <button
               key={item.page}
-              className={`command-item ${currentPage === item.page ? "active" : ""}`}
-              onClick={() => onNavigate(item.page)}
+              type="button"
+              id={`${resultsId}-${index}`}
+              role="option"
+              aria-selected={activeIndex === index}
+              tabIndex={-1}
+              className={`command-item ${currentPage === item.page ? "active" : ""} ${activeIndex === index ? "selected" : ""}`}
+              onPointerMove={() => setActiveIndex(index)}
+              onClick={() => selectDestination(item)}
             >
               <span className="command-item-icon"><Icon name={item.icon} size={18} /></span>
               <span className="command-item-copy">
@@ -64,7 +109,7 @@ export default function CommandPalette({ isOpen, currentPage, onClose, onNavigat
           ))}
 
           {!filtered.length && (
-            <div className="command-empty">
+            <div className="command-empty" role="status">
               <Icon name="search" size={22} />
               <strong>Nicio secțiune găsită</strong>
               <span>Încearcă alt termen.</span>
@@ -73,6 +118,7 @@ export default function CommandPalette({ isOpen, currentPage, onClose, onNavigat
         </div>
 
         <div className="command-footer">
+          <span><kbd>↑</kbd><kbd>↓</kbd> navighează</span>
           <span><kbd>↵</kbd> selectează</span>
           <span><kbd>Ctrl</kbd><kbd>K</kbd> deschide oriunde</span>
         </div>

@@ -1,20 +1,32 @@
-import hmac
+import logging
 import os
 import shutil
-from pathlib import Path
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.database import get_db
-from app.services.backup import create_database_backup
+from app.database import begin_inventory_write, get_db
+from app.services.backup import BackupError, create_database_backup
+from app.services.security import UPLOAD_DIR, secrets_match
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
-BACKEND_DIR = Path(__file__).resolve().parents[2]
-UPLOAD_ROOT = BACKEND_DIR / "uploads"
+UPLOAD_ROOT = UPLOAD_DIR
+logger = logging.getLogger(__name__)
+
+
+def _required_backup(label: str) -> str:
+    try:
+        path = create_database_backup(label)
+    except BackupError:
+        logger.exception("Inventory recovery point could not be created")
+        raise HTTPException(status_code=503, detail="Copia de siguranță nu a putut fi creată. Datele au fost păstrate.")
+    if path is None:
+        raise HTTPException(status_code=503, detail="Este necesară o bază SQLite disponibilă pentru copia de siguranță.")
+    return path
 
 
 @router.get("/dashboard")
@@ -47,9 +59,9 @@ def get_admin_dashboard(db: Session = Depends(get_db)):
 
 @router.post("/backup")
 def create_backup():
-    path = create_database_backup("manual")
+    path = _required_backup("manual")
     return {
-        "message": "Backup created" if path else "Backup is only available for SQLite",
+        "message": "Database and uploaded photos backed up",
         "path": path,
     }
 
@@ -66,11 +78,12 @@ def clear_all_application_data(
             detail="ADMIN_CLEAR_CODE is not configured in backend/.env",
         )
 
-    if not hmac.compare_digest(payload.code, expected_code):
+    if not secrets_match(payload.code, expected_code):
         raise HTTPException(status_code=403, detail="Invalid administrator reset code")
 
+    begin_inventory_write(db)
     # A recovery point is made immediately before the destructive operation.
-    backup_path = create_database_backup("before_clear")
+    backup_path = _required_backup("before_clear")
 
     deleted = {
         "device_public_links": db.query(models.DevicePublicLink).count(),
@@ -84,6 +97,21 @@ def clear_all_application_data(
         "people": db.query(models.Person).count(),
         "locations": db.query(models.Location).count(),
     }
+
+    # Stage photos by renaming on the same volume; restore the original folder
+    # if the database transaction fails. The staging path is never public.
+    devices_dir = UPLOAD_ROOT / "devices"
+    staged_dir = UPLOAD_ROOT / f".reset-{uuid.uuid4().hex}"
+    staged = False
+    try:
+        if devices_dir.exists():
+            if devices_dir.is_symlink() or (hasattr(devices_dir, "is_junction") and devices_dir.is_junction()):
+                raise OSError("Linked upload directory cannot be reset")
+            devices_dir.rename(staged_dir)
+            staged = True
+    except OSError:
+        logger.exception("Inventory photos could not be staged for reset")
+        raise HTTPException(status_code=503, detail="Fotografiile nu au putut fi pregătite pentru resetare. Datele au fost păstrate.")
 
     try:
         # Delete in dependency-safe order. The schema itself remains intact.
@@ -100,20 +128,25 @@ def clear_all_application_data(
         db.commit()
     except Exception:
         db.rollback()
+        if staged:
+            staged_dir.rename(devices_dir)
         raise
 
-    # Uploaded images are application data too. Keep the uploads root itself so
-    # FastAPI's StaticFiles mount stays valid after the reset.
-    if UPLOAD_ROOT.exists():
-        for child in UPLOAD_ROOT.iterdir():
-            if child.is_dir():
-                shutil.rmtree(child, ignore_errors=True)
-            else:
-                child.unlink(missing_ok=True)
-    UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+    # Remove staged inventory photos only after the transaction succeeds.
+    cleanup_pending = False
+    if staged:
+        try:
+            shutil.rmtree(staged_dir)
+        except OSError:
+            # Database reset succeeded and the verified ZIP holds the photos.
+            # Report an incomplete local cleanup instead of silently ignoring it.
+            logger.exception("Reset finished but staged photos need local cleanup")
+            cleanup_pending = True
+    devices_dir.mkdir(parents=True, exist_ok=True)
 
     return {
         "message": "All application data was cleared",
         "deleted": deleted,
         "backup_path": backup_path,
+        "cleanup_pending": cleanup_pending,
     }

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Icon from "./Icon";
+import { parseApiDate } from "../hooks/dateFormatting";
 import {
   getNotifications,
   getUnreadNotificationCount,
@@ -8,8 +9,9 @@ import {
 } from "../services/api";
 
 function timeAgo(value) {
-  if (!value) return "";
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  const date = parseApiDate(value);
+  if (!date) return "";
+  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
   if (seconds < 60) return "acum";
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes} min`;
@@ -24,103 +26,149 @@ export default function NotificationCenter({ onNavigate }) {
   const [items, setItems] = useState([]);
   const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [readingAll, setReadingAll] = useState(false);
+  const [readingIds, setReadingIds] = useState(new Set());
+  const [error, setError] = useState("");
   const rootRef = useRef(null);
+  const triggerRef = useRef(null);
+  const pendingReads = useRef(new Set());
+  const readingAllRef = useRef(false);
+  const refreshVersion = useRef(0);
+  const panelId = useId();
 
   async function refresh() {
+    if (readingAllRef.current || pendingReads.current.size) return;
+    const version = ++refreshVersion.current;
     try {
       const [notifications, unread] = await Promise.all([
         getNotifications({ limit: 30 }),
         getUnreadNotificationCount(),
       ]);
-      setItems(notifications);
-      setCount(unread.count || 0);
+      if (version === refreshVersion.current) {
+        setItems(notifications);
+        setCount(unread.count || 0);
+        setError("");
+      }
     } catch {
-      // The rest of the app should remain usable even if notifications are unavailable.
+      if (version === refreshVersion.current) setError("Notificările nu pot fi actualizate momentan.");
     }
   }
 
   useEffect(() => {
     refresh();
     const timer = window.setInterval(refresh, 20000);
-    return () => window.clearInterval(timer);
+    return () => { window.clearInterval(timer); refreshVersion.current += 1; };
   }, []);
 
   useEffect(() => {
+    if (!open) return undefined;
     function closeOutside(event) {
       if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false);
     }
-    document.addEventListener("mousedown", closeOutside);
-    return () => document.removeEventListener("mousedown", closeOutside);
-  }, []);
-
-  async function openPanel() {
-    const next = !open;
-    setOpen(next);
-    if (next) {
-      setLoading(true);
-      await refresh();
-      setLoading(false);
+    function closeWithEscape(event) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      triggerRef.current?.focus({ preventScroll: true });
     }
-  }
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeWithEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeWithEscape);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    let cancelled = false;
+    setLoading(true);
+    refresh().finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [open]);
 
   async function readItem(item) {
-    if (!item.is_read) {
-      try {
-        await markNotificationRead(item.id);
-        setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, is_read: true } : entry));
-        setCount((current) => Math.max(0, current - 1));
-      } catch {
-        // Non-critical UI action.
-      }
+    if (item.is_read || readingAllRef.current || pendingReads.current.has(item.id)) return;
+    pendingReads.current.add(item.id);
+    refreshVersion.current += 1;
+    setReadingIds(new Set(pendingReads.current));
+    try {
+      await markNotificationRead(item.id);
+      setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, is_read: true } : entry));
+      setCount((current) => Math.max(0, current - 1));
+    } catch {
+      setError("Notificarea nu a putut fi marcată drept citită. Încearcă din nou.");
+    } finally {
+      pendingReads.current.delete(item.id);
+      setReadingIds(new Set(pendingReads.current));
     }
   }
 
   async function readAll() {
+    if (readingAllRef.current || pendingReads.current.size || !count) return;
+    readingAllRef.current = true;
+    refreshVersion.current += 1;
+    setReadingAll(true);
     try {
       await markAllNotificationsRead();
       setItems((current) => current.map((entry) => ({ ...entry, is_read: true })));
       setCount(0);
     } catch {
-      // Non-critical UI action.
+      setError("Notificările nu au putut fi marcate drept citite. Încearcă din nou.");
+    } finally {
+      readingAllRef.current = false;
+      setReadingAll(false);
     }
   }
 
   return (
-    <div className="notification-center" ref={rootRef}>
+    <div className="notification-center" ref={rootRef} onBlur={(event) => {
+      if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+    }}>
       <button
+        ref={triggerRef}
+        type="button"
         className={`icon-button notification-button ${count ? "has-unread" : ""}`}
         aria-label="Notificări"
         title="Notificări"
-        onClick={openPanel}
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((value) => !value)}
       >
         <Icon name="bell" />
         {count > 0 && <span className="notification-count">{count > 99 ? "99+" : count}</span>}
       </button>
 
       {open && (
-        <div className="notification-popover">
+        <div className="notification-popover" id={panelId} role="region" aria-labelledby={`${panelId}-title`}>
           <div className="notification-popover-head">
             <div>
               <span className="panel-eyebrow">ACTIVITATE RECENTĂ</span>
-              <strong>Notificări</strong>
+              <strong id={`${panelId}-title`}>Notificări</strong>
             </div>
-            {count > 0 && <button className="text-button" onClick={readAll}>Marchează toate citite</button>}
+            {count > 0 && <button type="button" className="text-button" onClick={readAll} disabled={readingAll || readingIds.size > 0}>{readingAll ? "Se salvează..." : "Marchează toate citite"}</button>}
+            <button type="button" className="icon-button notification-close" aria-label="Închide notificările" onClick={() => { setOpen(false); triggerRef.current?.focus({ preventScroll: true }); }}><Icon name="close" size={18} /></button>
           </div>
 
-          <div className="notification-list">
-            {loading && <div className="notification-empty">Se încarcă...</div>}
-            {!loading && !items.length && (
+          <div className="notification-list" aria-busy={loading}>
+            {error && <div className="notification-error" role="alert">{error}<button type="button" className="text-button" disabled={loading} onClick={() => { setLoading(true); refresh().finally(() => setLoading(false)); }}>Reîncearcă</button></div>}
+            {loading && <div className="notification-load-status" role="status">Se încarcă…</div>}
+            {!loading && !error && !items.length && (
               <div className="notification-empty">
                 <Icon name="check" size={22} />
                 <strong>Totul este liniștit</strong>
                 <span>Evenimentele importante vor apărea aici.</span>
               </div>
             )}
-            {!loading && items.map((item) => (
+            {items.map((item) => (
               <button
                 key={item.id}
-                className={`notification-item ${item.is_read ? "read" : "unread"} severity-${item.severity.toLowerCase()}`}
+                type="button"
+                className={`notification-item ${item.is_read ? "read" : "unread"} severity-${(item.severity || "info").toLowerCase()}`}
                 onClick={() => readItem(item)}
+                disabled={readingAll || readingIds.has(item.id)}
+                aria-busy={readingIds.has(item.id)}
               >
                 <span className="notification-severity-dot" />
                 <span className="notification-copy">
@@ -135,6 +183,7 @@ export default function NotificationCenter({ onNavigate }) {
           </div>
 
           <button
+            type="button"
             className="notification-footer"
             onClick={() => {
               setOpen(false);

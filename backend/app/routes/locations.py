@@ -2,9 +2,11 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app import models, schemas
-from app.database import get_db
+from app.database import begin_inventory_write, get_db
+from app.services.code_generator import reserve_entity_id
 
 router = APIRouter(prefix="/locations", tags=["Locations"])
 
@@ -49,6 +51,7 @@ def get_location(location_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", response_model=schemas.LocationResponse, status_code=201)
 def create_location(location: schemas.LocationCreate, db: Session = Depends(get_db)):
+    begin_inventory_write(db)
     name = location.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Location name cannot be empty")
@@ -56,12 +59,17 @@ def create_location(location: schemas.LocationCreate, db: Session = Depends(get_
         raise HTTPException(status_code=409, detail="Location name already exists")
 
     db_location = models.Location(
+        id=reserve_entity_id(db, models.Location, "location", models.AuditEvent.location_id),
         name=name,
         description=location.description.strip() if location.description else None,
         active=1,
     )
     db.add(db_location)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Location name already exists") from None
     db.add(models.Log(action="LOCATION_CREATED", new_value=location_snapshot(db_location)))
     db.commit()
     db.refresh(db_location)
@@ -74,6 +82,7 @@ def update_location(
     location_update: schemas.LocationUpdate,
     db: Session = Depends(get_db),
 ):
+    begin_inventory_write(db)
     db_location = db.query(models.Location).filter(models.Location.id == location_id).first()
     if db_location is None:
         raise HTTPException(status_code=404, detail="Location not found")
@@ -89,7 +98,9 @@ def update_location(
     if "description" in update_data and update_data["description"]:
         update_data["description"] = update_data["description"].strip()
 
-    if "active" in update_data and update_data["active"] is not None:
+    if "active" in update_data and update_data["active"] is None:
+        raise HTTPException(status_code=400, detail="Active cannot be null")
+    if "active" in update_data:
         update_data["active"] = 1 if update_data["active"] else 0
 
     if update_data.get("active") == 0:
@@ -104,7 +115,11 @@ def update_location(
     for field, value in update_data.items():
         setattr(db_location, field, value)
 
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Location name already exists") from None
     db.add(
         models.Log(
             action="LOCATION_UPDATED",
@@ -119,6 +134,7 @@ def update_location(
 
 @router.delete("/{location_id}")
 def archive_location(location_id: int, db: Session = Depends(get_db)):
+    begin_inventory_write(db)
     db_location = db.query(models.Location).filter(models.Location.id == location_id).first()
     if db_location is None:
         raise HTTPException(status_code=404, detail="Location not found")

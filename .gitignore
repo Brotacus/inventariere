@@ -13,6 +13,7 @@ backend/.env
 
 # Imagini incarcate local de admin
 backend/uploads/
+backend/backups/
 
 # React
 frontend/node_modules/
@@ -23,3 +24,11 @@ frontend/dist/
 
 # Windows
 Thumbs.db
+
+# Generated files
+node_modules/
+dist/
+.pytest_cache/
+*.db-shm
+*.db-wal
+*:Zone.Identifier

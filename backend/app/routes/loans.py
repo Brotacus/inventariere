@@ -5,16 +5,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.database import get_db
+from app.database import begin_inventory_write, get_db
 from app.services.audit import record_activity
 from app.services.email_service import send_loan_email
+from app.services.code_generator import reserve_entity_id
 
 router = APIRouter(prefix="/loans", tags=["Loans"])
 
 
-def loan_to_response(loan: models.Loan, db: Session) -> dict:
-    device = db.query(models.Device).filter(models.Device.id == loan.device_id).first()
-    person = db.query(models.Person).filter(models.Person.id == loan.person_id).first()
+def loan_to_response(loan: models.Loan, db: Session | None = None, *, device=None, person=None) -> dict:
+    if db is not None:
+        device = db.get(models.Device, loan.device_id)
+        person = db.get(models.Person, loan.person_id)
     return {
         "id": loan.id,
         "device_id": loan.device_id,
@@ -39,11 +41,15 @@ def get_loans(
     status: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    query = db.query(models.Loan)
+    query = (
+        db.query(models.Loan, models.Device, models.Person)
+        .outerjoin(models.Device, models.Loan.device_id == models.Device.id)
+        .outerjoin(models.Person, models.Loan.person_id == models.Person.id)
+    )
     if status:
         query = query.filter(models.Loan.status == status.upper())
     loans = query.order_by(models.Loan.id.desc()).all()
-    return [loan_to_response(loan, db) for loan in loans]
+    return [loan_to_response(loan, device=device, person=person) for loan, device, person in loans]
 
 
 @router.get("/{loan_id}", response_model=schemas.LoanResponse)
@@ -56,6 +62,7 @@ def get_loan(loan_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", response_model=schemas.LoanResponse, status_code=201)
 def create_loan(loan: schemas.LoanCreate, db: Session = Depends(get_db)):
+    begin_inventory_write(db)
     device = db.query(models.Device).filter(models.Device.id == loan.device_id).first()
     if device is None:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -82,7 +89,17 @@ def create_loan(loan: schemas.LoanCreate, db: Session = Depends(get_db)):
         )
 
     location = location_for_device(device, db)
-    db_loan = models.Loan(device_id=loan.device_id, person_id=loan.person_id, status="ACTIVE")
+    claimed = db.query(models.Device).filter(
+        models.Device.id == loan.device_id,
+        models.Device.status == "AVAILABLE",
+    ).update({models.Device.status: "LOANED"}, synchronize_session=False)
+    if not claimed:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Device is no longer available for loaning")
+    db_loan = models.Loan(
+        id=reserve_entity_id(db, models.Loan, "loan", models.AuditEvent.loan_id),
+        device_id=loan.device_id, person_id=loan.person_id, status="ACTIVE",
+    )
     db.add(db_loan)
     device.status = "LOANED"
     db.flush()
@@ -225,6 +242,7 @@ def create_loan(loan: schemas.LoanCreate, db: Session = Depends(get_db)):
 
 @router.post("/{loan_id}/return", response_model=schemas.LoanResponse)
 def return_loan(loan_id: int, db: Session = Depends(get_db)):
+    begin_inventory_write(db)
     db_loan = db.query(models.Loan).filter(models.Loan.id == loan_id).first()
     if db_loan is None:
         raise HTTPException(status_code=404, detail="Loan not found")
@@ -235,8 +253,16 @@ def return_loan(loan_id: int, db: Session = Depends(get_db)):
     person = db.query(models.Person).filter(models.Person.id == db_loan.person_id).first()
     location = location_for_device(device, db) if device else None
 
+    returned_at = datetime.now(timezone.utc)
+    returned = db.query(models.Loan).filter(
+        models.Loan.id == loan_id,
+        models.Loan.status == "ACTIVE",
+    ).update({models.Loan.status: "RETURNED", models.Loan.return_date: returned_at}, synchronize_session=False)
+    if not returned:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Loan is already returned")
     db_loan.status = "RETURNED"
-    db_loan.return_date = datetime.now(timezone.utc)
+    db_loan.return_date = returned_at
     if device:
         device.status = "AVAILABLE"
 
