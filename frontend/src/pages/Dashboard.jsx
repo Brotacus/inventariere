@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Icon from "../components/Icon";
+import useLatestRequest from "../hooks/useLatestRequest";
+import { parseApiDate } from "../hooks/dateFormatting";
+import { StatusBadge } from "../components/DeviceTable";
 import { getLoans, getLocations, getPeople } from "../services/api";
 
 function StatCard({ icon, label, value, helper, tone = "default" }) {
@@ -16,19 +19,31 @@ function StatCard({ icon, label, value, helper, tone = "default" }) {
 }
 
 export default function Dashboard({ devices, onNavigate }) {
-  const [activeLoans, setActiveLoans] = useState([]);
-  const [people, setPeople] = useState([]);
-  const [locations, setLocations] = useState([]);
+  const [activeLoans, setActiveLoans] = useState(null);
+  const [people, setPeople] = useState(null);
+  const [locations, setLocations] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const requests = useLatestRequest();
 
-  useEffect(() => {
-    Promise.all([getLoans("ACTIVE"), getPeople(false), getLocations()])
-      .then(([loanData, peopleData, locationData]) => {
+  async function loadMetrics() {
+    const request = requests.begin();
+    setLoading(true);
+    try {
+      const [loanData, peopleData, locationData] = await Promise.all([getLoans("ACTIVE"), getPeople(false), getLocations(false)]);
+      if (requests.isCurrent(request)) {
         setActiveLoans(loanData || []);
         setPeople(peopleData || []);
         setLocations(locationData || []);
-      })
-      .catch(() => {});
-  }, []);
+        setError("");
+      }
+    } catch (err) {
+      if (requests.isCurrent(request)) setError(err.message);
+    } finally {
+      if (requests.isCurrent(request)) setLoading(false);
+    }
+  }
+  useEffect(() => { loadMetrics(); }, [devices]);
 
   const counts = useMemo(() => {
     const available = devices.filter((d) => d.status === "AVAILABLE").length;
@@ -38,7 +53,7 @@ export default function Dashboard({ devices, onNavigate }) {
   }, [devices]);
 
   const maxStatus = Math.max(devices.length, 1);
-  const recentDevices = [...devices].slice(-5).reverse();
+  const recentDevices = [...devices].sort((a, b) => (parseApiDate(b.created_at)?.getTime() || b.id) - (parseApiDate(a.created_at)?.getTime() || a.id)).slice(0, 5);
 
   return (
     <section className="page page-dashboard">
@@ -56,10 +71,11 @@ export default function Dashboard({ devices, onNavigate }) {
         </div>
       </div>
 
-      <div className="stats-grid">
+      {error && <div className="alert alert-error" role="alert"><Icon name="alert" size={17} /><span>{error}</span><button type="button" className="text-button" disabled={loading} onClick={loadMetrics}>Reîncearcă</button></div>}
+      <div className="stats-grid" aria-busy={loading}>
         <StatCard icon="inventory" label="Obiecte totale" value={devices.length} helper="Total" />
         <StatCard icon="check" label="Disponibile" value={counts.available} helper="Ready" tone="success" />
-        <StatCard icon="loans" label="Împrumuturi active" value={activeLoans.length || counts.loaned} helper="Active" tone="warning" />
+        <StatCard icon="loans" label="Împrumuturi active" value={activeLoans?.length ?? "—"} helper="Active" tone="warning" />
         <StatCard icon="alert" label="Necesită atenție" value={counts.attention} helper="Review" tone="danger" />
       </div>
 
@@ -89,9 +105,9 @@ export default function Dashboard({ devices, onNavigate }) {
           </div>
 
           <div className="mini-metrics">
-            <div><Icon name="people" size={18} /><span>Persoane active</span><strong>{people.length}</strong></div>
-            <div><Icon name="locations" size={18} /><span>Locații</span><strong>{locations.length}</strong></div>
-            <div><Icon name="loans" size={18} /><span>În circulație</span><strong>{activeLoans.length}</strong></div>
+            <div><Icon name="people" size={18} /><span>Persoane active</span><strong>{people?.length ?? "—"}</strong></div>
+            <div><Icon name="locations" size={18} /><span>Locații active</span><strong>{locations?.length ?? "—"}</strong></div>
+            <div><Icon name="loans" size={18} /><span>În circulație</span><strong>{activeLoans?.length ?? "—"}</strong></div>
           </div>
         </div>
 
@@ -126,7 +142,7 @@ export default function Dashboard({ devices, onNavigate }) {
               <div className="recent-item" key={device.id}>
                 <div className="object-avatar">{(device.name || "?").charAt(0).toUpperCase()}</div>
                 <div className="recent-main"><strong>{device.name}</strong><span>{device.category} · {device.code}</span></div>
-                <span className={`badge badge-${(device.status || "").toLowerCase().replace("_", "-")}`}>{device.status}</span>
+                <StatusBadge status={device.status} />
               </div>
             ))}
           </div>

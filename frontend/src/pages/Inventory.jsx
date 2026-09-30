@@ -3,14 +3,16 @@ import DeviceTable from "../components/DeviceTable";
 import Icon from "../components/Icon";
 import { getLocations } from "../services/api";
 
-export default function Inventory({ devices, onDelete, onOpen }) {
+export default function Inventory({ devices, onDelete, onOpen, deleting = false }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [category, setCategory] = useState("");
   const [locations, setLocations] = useState([]);
 
   useEffect(() => {
-    getLocations(true).then(setLocations).catch(() => setLocations([]));
+    let cancelled = false;
+    getLocations(true).then(data => { if (!cancelled) setLocations(data); }).catch(() => {});
+    return () => { cancelled = true; };
   }, [devices]);
 
   const locationMap = useMemo(
@@ -49,15 +51,15 @@ export default function Inventory({ devices, onDelete, onOpen }) {
       <div className="toolbar panel-toolbar">
         <div className="search-box">
           <Icon name="search" size={18} />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Caută după nume, cod, serie sau locație..." />
+          <input type="search" aria-label="Caută în inventar" maxLength={200} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Caută după nume, cod, serie sau locație..." />
         </div>
         <div className="toolbar-filters">
-          <div className="select-wrap"><Icon name="filter" size={16} /><select value={status} onChange={(e) => setStatus(e.target.value)}><option value="">Toate statusurile</option><option value="AVAILABLE">Disponibile</option><option value="LOANED">Împrumutate</option><option value="IN_USE">În uz</option><option value="BROKEN">Stricate</option><option value="LOST">Pierdute</option><option value="RETIRED">Scoase din uz</option></select></div>
-          <select value={category} onChange={(e) => setCategory(e.target.value)}><option value="">Toate categoriile</option>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</select>
+          <div className="select-wrap"><Icon name="filter" size={16} /><select aria-label="Starea obiectelor" value={status} onChange={(e) => setStatus(e.target.value)}><option value="">Toate statusurile</option><option value="AVAILABLE">Disponibile</option><option value="LOANED">Împrumutate</option><option value="IN_USE">În uz</option><option value="BROKEN">Stricate</option><option value="LOST">Pierdute</option><option value="RETIRED">Scoase din uz</option></select></div>
+          <select aria-label="Categoria obiectelor" value={category} onChange={(e) => setCategory(e.target.value)}><option value="">Toate categoriile</option>{[...new Set([...categories, ...(category ? [category] : [])])].map((item) => <option key={item} value={item}>{item}</option>)}</select>
         </div>
       </div>
 
-      <DeviceTable devices={filtered} locationMap={locationMap} onDelete={onDelete} onOpen={onOpen} />
+      <DeviceTable devices={filtered} locationMap={locationMap} onDelete={onDelete} onOpen={onOpen} deleting={deleting} />
     </section>
   );
 }

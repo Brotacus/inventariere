@@ -1,9 +1,11 @@
 import NotificationCenter from "./NotificationCenter";
 import Icon from "./Icon";
+import { useEffect, useState } from "react";
 
 const pageLabels = {
   Dashboard: "Prezentare generală",
   Inventory: "Inventar",
+  "Device Detail": "Fișa obiectului",
   "Add Device": "Adaugă obiect",
   People: "Persoane",
   Locations: "Locații",
@@ -13,7 +15,19 @@ const pageLabels = {
   Admin: "Administrare sistem",
 };
 
-export default function Navbar({ onToggleSidebar, currentPage, theme, onToggleTheme, onOpenCommand, onNavigate, onLogout }) {
+export default function Navbar({ onToggleSidebar, currentPage, theme, onToggleTheme, onOpenCommand, onNavigate, onLogout, loggingOut = false }) {
+  const [connection, setConnection] = useState("unknown");
+  useEffect(() => {
+    function update(event) { setConnection(event.detail?.status || "unknown"); }
+    function offline() { setConnection("offline"); }
+    window.addEventListener("inventory-connection", update);
+    window.addEventListener("offline", offline);
+    if (!navigator.onLine) offline();
+    return () => {
+      window.removeEventListener("inventory-connection", update);
+      window.removeEventListener("offline", offline);
+    };
+  }, []);
   return (
     <header className="topbar">
       <div className="topbar-left">
@@ -33,9 +47,9 @@ export default function Navbar({ onToggleSidebar, currentPage, theme, onToggleTh
           <kbd>Ctrl K</kbd>
         </button>
 
-        <div className="system-status" title="Backend conectat">
+        <div className={`system-status connection-${connection}`} role="status" title={connection === "online" ? "Ultima cerere către server a reușit" : connection === "offline" ? "Conexiunea către server este indisponibilă" : "Starea serverului nu a fost confirmată"}>
           <span className="status-dot" />
-          Sistem online
+          {connection === "online" ? "Server conectat" : connection === "offline" ? "Conexiune indisponibilă" : "Se verifică serverul"}
         </div>
 
         <button
@@ -58,7 +72,7 @@ export default function Navbar({ onToggleSidebar, currentPage, theme, onToggleTh
           </div>
         </div>
 
-        <button className="icon-button logout-button" onClick={onLogout} aria-label="Deconectare" title="Deconectare">
+        <button className="icon-button logout-button" onClick={onLogout} disabled={loggingOut} aria-label="Deconectare" title="Deconectare">
           <Icon name="logout" size={18} />
         </button>
       </div>

@@ -29,7 +29,7 @@ if DATABASE_URL.startswith("sqlite"):
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=FULL")
-        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
 
@@ -41,6 +41,17 @@ SessionLocal = sessionmaker(
 )
 
 Base = declarative_base()
+
+
+def begin_inventory_write(db):
+    """Serialize SQLite business validation and writes in one transaction.
+
+    A deferred read followed by a write permits two requests to make the same
+    decision from stale data. SQLite already has a single writer; acquiring that
+    lock before validation also protects role, loan and location invariants.
+    """
+    if db.get_bind().dialect.name == "sqlite":
+        db.execute(text("BEGIN IMMEDIATE"))
 
 
 def ensure_schema_compatibility():

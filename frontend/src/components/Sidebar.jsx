@@ -1,4 +1,6 @@
+import { useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
+import useDialogFocus from "../hooks/useDialogFocus";
 
 const groups = [
   {
@@ -25,7 +27,25 @@ const groups = [
   },
 ];
 
-export default function Sidebar({ isOpen, currentPage, setCurrentPage, onClose }) {
+export default function Sidebar({ isOpen, currentPage, setCurrentPage, onClose, inert = false }) {
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 900px)").matches);
+  const sidebarRef = useRef(null);
+  const closeRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 900px)");
+    const updateViewport = () => {
+      setIsMobile(media.matches);
+      if (!media.matches) onCloseRef.current();
+    };
+    media.addEventListener("change", updateViewport);
+    return () => media.removeEventListener("change", updateViewport);
+  }, []);
+
+  useDialogFocus({ active: isOpen && isMobile && !inert, dialogRef: sidebarRef, initialFocusRef: closeRef, onClose });
+
   function selectPage(page) {
     setCurrentPage(page);
     onClose();
@@ -33,8 +53,18 @@ export default function Sidebar({ isOpen, currentPage, setCurrentPage, onClose }
 
   return (
     <>
-      {isOpen && <div className="sidebar-overlay" onClick={onClose} />}
-      <aside className={`sidebar ${isOpen ? "open" : ""}`}>
+      {isOpen && isMobile && <div className="sidebar-overlay" onPointerDown={onClose} aria-hidden="true" />}
+      <aside
+        ref={sidebarRef}
+        id="admin-sidebar"
+        className={`sidebar ${isOpen ? "open" : ""}`}
+        inert={inert || (isMobile && !isOpen) ? true : undefined}
+        aria-hidden={inert || (isMobile && !isOpen) ? true : undefined}
+        role={isMobile && isOpen ? "dialog" : undefined}
+        aria-modal={isMobile && isOpen ? true : undefined}
+        aria-label="Meniu de administrare"
+        tabIndex={-1}
+      >
         <div className="sidebar-brand">
           <div className="brand-mark brand-logo-wrap">
             <img src="/inventory-logo.png" alt="" className="brand-logo" />
@@ -43,7 +73,7 @@ export default function Sidebar({ isOpen, currentPage, setCurrentPage, onClose }
             <strong>Inventar</strong>
             <span>Asset Management</span>
           </div>
-          <button className="icon-button sidebar-close" onClick={onClose} aria-label="Închide meniul">
+          <button ref={closeRef} type="button" className="icon-button sidebar-close" onClick={onClose} aria-label="Închide meniul">
             <Icon name="close" size={18} />
           </button>
         </div>
@@ -51,17 +81,19 @@ export default function Sidebar({ isOpen, currentPage, setCurrentPage, onClose }
         <div className="workspace-chip">
           <span className="workspace-mark">UPB</span>
           <div><strong>Inventory workspace</strong><small>Laboratory assets</small></div>
-          <span className="workspace-live">LIVE</span>
+          <span className="workspace-live">ADMIN</span>
         </div>
 
-        <nav className="sidebar-nav">
+        <nav className="sidebar-nav" aria-label="Secțiuni de administrare">
           {groups.map((group) => (
             <div className="nav-group" key={group.label}>
               <div className="nav-label">{group.label}</div>
               {group.items.map((item) => (
                 <button
                   key={item.page}
+                  type="button"
                   className={`nav-item ${currentPage === item.page ? "active" : ""}`}
+                  aria-current={currentPage === item.page ? "page" : undefined}
                   onClick={() => selectPage(item.page)}
                 >
                   <Icon name={item.icon} size={19} />
@@ -71,13 +103,14 @@ export default function Sidebar({ isOpen, currentPage, setCurrentPage, onClose }
               ))}
             </div>
           ))}
+          <a className="nav-item" href="/catalog"><Icon name="inventory" size={19} /><span>Catalog public</span><Icon name="external" size={15} /></a>
         </nav>
 
         <div className="sidebar-footer">
           <div className="footer-icon"><Icon name="server" size={18} /></div>
           <div>
             <strong>Inventory API</strong>
-            <span><i /> localhost:8000</span>
+            <span>Operații autentificate</span>
           </div>
           <span className="api-pill">API</span>
         </div>

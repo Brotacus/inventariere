@@ -2,6 +2,7 @@ import os
 import smtplib
 import ssl
 from email.message import EmailMessage
+from html import escape
 
 from dotenv import load_dotenv
 
@@ -36,6 +37,9 @@ def send_loan_email(
     if not smtp_from:
         raise RuntimeError("SMTP_FROM or SMTP_USER must be configured")
 
+    if smtp_user and smtp_password and not (smtp_use_tls or smtp_use_ssl):
+        raise RuntimeError("SMTP authentication requires TLS or SSL")
+
     if not recipient_email or not recipient_email.strip():
         raise RuntimeError("Recipient email is empty")
 
@@ -66,16 +70,16 @@ Acest email a fost trimis automat de aplicatia de inventariere.
 <html lang="ro">
   <body style="font-family: Arial, sans-serif; color: #222;">
     <h2>Confirmare imprumut</h2>
-    <p>Buna, <strong>{person_name}</strong>!</p>
+    <p>Buna, <strong>{escape(person_name)}</strong>!</p>
     <p>A fost inregistrat un imprumut pe numele tau.</p>
     <table cellpadding="6" cellspacing="0" style="border-collapse: collapse;">
       <tr>
         <td><strong>Obiect</strong></td>
-        <td>{device_name}</td>
+        <td>{escape(device_name)}</td>
       </tr>
       <tr>
         <td><strong>Cod inventar</strong></td>
-        <td>{device_code}</td>
+        <td>{escape(device_code)}</td>
       </tr>
       <tr>
         <td><strong>ID imprumut</strong></td>

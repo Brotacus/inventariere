@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+import re
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class DeviceBase(BaseModel):
@@ -15,17 +17,23 @@ class DeviceBase(BaseModel):
 
 class DeviceCreate(DeviceBase):
     # Every new asset must enter the inventory with a known physical location.
-    location_id: int
+    name: str = Field(max_length=200)
+    category: str = Field(max_length=200)
+    serial_number: str | None = Field(None, max_length=255)
+    status: str = Field("AVAILABLE", max_length=30)
+    location_id: int = Field(gt=0)
+    responsible_person_id: int | None = Field(None, gt=0)
+    description: str | None = Field(None, max_length=10000)
 
 
 class DeviceUpdate(BaseModel):
-    name: str | None = None
-    category: str | None = None
-    serial_number: str | None = None
-    status: str | None = None
-    location_id: int | None = None
-    responsible_person_id: int | None = None
-    description: str | None = None
+    name: str | None = Field(None, max_length=200)
+    category: str | None = Field(None, max_length=200)
+    serial_number: str | None = Field(None, max_length=255)
+    status: str | None = Field(None, max_length=30)
+    location_id: int | None = Field(None, gt=0)
+    responsible_person_id: int | None = Field(None, gt=0)
+    description: str | None = Field(None, max_length=10000)
 
 
 class DeviceResponse(DeviceBase):
@@ -35,20 +43,31 @@ class DeviceResponse(DeviceBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-class PersonCreate(BaseModel):
+class PersonWriteFields(BaseModel):
+    email: str | None = Field(None, max_length=254)
+    phone: str | None = Field(None, max_length=80)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value):
+        if value is None or not value.strip():
+            return None
+        value = value.strip()
+        if not re.fullmatch(r"[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+", value):
+            raise ValueError("Enter a valid email address")
+        return value
+
+
+class PersonCreate(PersonWriteFields):
     is_responsible: bool = False
     is_borrower: bool = True
-    name: str
-    email: str | None = None
-    phone: str | None = None
+    name: str = Field(max_length=200)
 
 
-class PersonUpdate(BaseModel):
+class PersonUpdate(PersonWriteFields):
     is_responsible: bool | None = None
     is_borrower: bool | None = None
-    name: str | None = None
-    email: str | None = None
-    phone: str | None = None
+    name: str | None = Field(None, max_length=200)
     active: bool | None = None
 
 
@@ -65,13 +84,13 @@ class PersonResponse(BaseModel):
 
 
 class LocationCreate(BaseModel):
-    name: str
-    description: str | None = None
+    name: str = Field(max_length=200)
+    description: str | None = Field(None, max_length=10000)
 
 
 class LocationUpdate(BaseModel):
-    name: str | None = None
-    description: str | None = None
+    name: str | None = Field(None, max_length=200)
+    description: str | None = Field(None, max_length=10000)
     active: bool | None = None
 
 
@@ -85,8 +104,8 @@ class LocationResponse(BaseModel):
 
 
 class LoanCreate(BaseModel):
-    device_id: int
-    person_id: int
+    device_id: int = Field(gt=0)
+    person_id: int = Field(gt=0)
 
 
 class LoanResponse(BaseModel):
@@ -175,11 +194,11 @@ class NotificationResponse(BaseModel):
 
 
 class AdminClearDataRequest(BaseModel):
-    code: str
+    code: str = Field(min_length=1, max_length=256)
 
 
 class PublicAccessRequest(BaseModel):
-    base_url: str
+    base_url: str = Field(max_length=500)
 
 
 class DevicePublicAccessResponse(BaseModel):
@@ -205,3 +224,14 @@ class PublicDeviceResponse(BaseModel):
     image_count: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class PublicCatalogResponse(BaseModel):
+    items: list[PublicDeviceResponse]
+    total: int
+    filtered_total: int
+    page: int
+    page_size: int
+    categories: list[str]
+    locations: list[str]
+    statuses: list[str]

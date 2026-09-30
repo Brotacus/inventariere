@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 
 import Icon from "./Icon";
+import usePendingAction from "../hooks/usePendingAction";
 
-export default function LoginScreen({ theme, onToggleTheme, onLogin, checking = false }) {
+export default function LoginScreen({ theme, onToggleTheme, onLogin, checking = false, verificationError = "", onRetryVerification }) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [capsLock, setCapsLock] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const { busy: submitting, beginAction, endAction } = usePendingAction();
   const [error, setError] = useState("");
   const inputRef = useRef(null);
 
@@ -16,9 +17,7 @@ export default function LoginScreen({ theme, onToggleTheme, onLogin, checking = 
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (!password || submitting || checking) return;
-
-    setSubmitting(true);
+    if (!password || checking || !beginAction()) return;
     setError("");
     try {
       await onLogin(password);
@@ -27,7 +26,7 @@ export default function LoginScreen({ theme, onToggleTheme, onLogin, checking = 
       setError(err.message || "Autentificarea nu a reușit.");
       requestAnimationFrame(() => inputRef.current?.focus());
     } finally {
-      setSubmitting(false);
+      endAction();
     }
   }
 
@@ -65,7 +64,7 @@ export default function LoginScreen({ theme, onToggleTheme, onLogin, checking = 
             </div>
 
             <div className="login-visual-status">
-              <div><span className="login-live-dot" /><strong>Sistem disponibil</strong></div>
+              <div><span className="login-live-dot" /><strong>Acces administrativ</strong></div>
               <small>Autentificarea este necesară înainte de accesarea datelor.</small>
             </div>
           </div>
@@ -117,13 +116,18 @@ export default function LoginScreen({ theme, onToggleTheme, onLogin, checking = 
                     onKeyDown={(event) => setCapsLock(event.getModifierState?.("CapsLock") || false)}
                     placeholder="Introdu parola"
                     autoComplete="current-password"
+                    name="password"
+                    maxLength={256}
+                    required
+                    aria-invalid={Boolean(error)}
+                    aria-describedby={error ? "login-error" : undefined}
                     disabled={submitting || checking}
                   />
                   <button
                     type="button"
+                    disabled={submitting || checking}
                     onClick={() => setShowPassword((value) => !value)}
                     aria-label={showPassword ? "Ascunde parola" : "Arată parola"}
-                    tabIndex={-1}
                   >
                     <Icon name={showPassword ? "eyeOff" : "eye"} size={17} />
                   </button>
@@ -131,9 +135,18 @@ export default function LoginScreen({ theme, onToggleTheme, onLogin, checking = 
               </label>
 
               {error && (
-                <div className="login-error" role="alert">
+                <div className="login-error" id="login-error" role="alert">
                   <Icon name="alert" size={16} />
                   <span>{error}</span>
+                </div>
+              )}
+
+              {verificationError && (
+                <div className="login-verification-error" role="alert">
+                  <p>{verificationError}</p>
+                  <button type="button" className="btn btn-secondary" disabled={checking || submitting} onClick={onRetryVerification}>
+                    {checking ? "Se verifică…" : "Reverifică sesiunea"}
+                  </button>
                 </div>
               )}
 
@@ -145,6 +158,8 @@ export default function LoginScreen({ theme, onToggleTheme, onLogin, checking = 
                 )}
               </button>
             </form>
+
+            <a className="login-catalog-link" href="/catalog"><Icon name="inventory" size={18} /> Explorează catalogul public <Icon name="arrow" size={18} /></a>
 
             <div className="login-security-note">
               <Icon name="shield" size={17} />

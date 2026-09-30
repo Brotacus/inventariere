@@ -1,19 +1,12 @@
 import { useEffect, useState } from "react";
 import Icon from "../components/Icon";
-import { getPublicAsset, mediaUrl } from "../services/api";
-
-const STATUS_LABELS = {
-  AVAILABLE: "Disponibil",
-  LOANED: "Împrumutat",
-  IN_USE: "În utilizare",
-  BROKEN: "Defect",
-  LOST: "Pierdut",
-  RETIRED: "Retras",
-};
+import PublicLayout, { PublicStatus } from "../components/PublicLayout";
+import AssetImage from "../components/AssetImage";
+import { getPublicAsset, getCatalogAsset } from "../services/api";
+import { formatDateTime } from "../hooks/dateFormatting";
 
 function formatDate(value) {
-  if (!value) return "-";
-  return new Date(value).toLocaleString("ro-RO", {
+  return formatDateTime(value, {
     day: "2-digit",
     month: "long",
     year: "numeric",
@@ -22,17 +15,21 @@ function formatDate(value) {
   });
 }
 
-export default function PublicAssetPage({ token, theme, onToggleTheme }) {
+export default function PublicAssetPage({ token, code, theme, onToggleTheme }) {
   const [asset, setAsset] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     async function load() {
       setLoading(true);
+      setAsset(null);
+      setError("");
       try {
-        const data = await getPublicAsset(token);
+        const data = await (code ? getCatalogAsset(code, controller.signal) : getPublicAsset(token, controller.signal));
         if (!cancelled) {
           setAsset(data);
           setError("");
@@ -44,60 +41,41 @@ export default function PublicAssetPage({ token, theme, onToggleTheme }) {
       }
     }
     load();
-    return () => { cancelled = true; };
-  }, [token]);
+    return () => { cancelled = true; controller.abort(); };
+  }, [token, code, attempt]);
 
   return (
-    <main className="public-asset-shell">
-      <header className="public-asset-header">
-        <div className="public-brand">
-          <img src="/inventory-logo.png" alt="Inventar" />
-          <div>
-            <strong>Inventar</strong>
-            <span>Fișă obiect · acces utilizator</span>
-          </div>
-        </div>
-        <button className="theme-toggle public-theme-toggle" type="button" onClick={onToggleTheme} title="Schimbă tema">
-          <Icon name={theme === "dark" ? "sun" : "moon"} size={18} />
-        </button>
-      </header>
-
-      <section className="public-asset-stage">
+    <PublicLayout theme={theme} onToggleTheme={onToggleTheme}>
+      <main id="public-content" className="public-asset-stage" tabIndex={-1}>
+        <a className="public-back-link" href={`/catalog${code ? window.location.search : ""}`}><Icon name="back" size={18} /> Înapoi la catalog</a>
         {loading && (
-          <div className="public-asset-state">
-            <span className="public-state-icon"><Icon name="refresh" size={25} /></span>
-            <h1>Se verifică eticheta...</h1>
+          <div className="public-asset-state" role="status" aria-live="polite" aria-atomic="true">
+            <span className="public-state-icon"><span className="public-loading-indicator" aria-hidden="true" /></span>
+            <h1>Se încarcă fișa…</h1>
             <p>Încărcăm informațiile actuale ale obiectului.</p>
           </div>
         )}
 
         {!loading && error && (
-          <div className="public-asset-state public-asset-error">
+          <div className="public-asset-state public-asset-error" role="alert">
             <span className="public-state-icon"><Icon name="alert" size={25} /></span>
-            <h1>Etichetă indisponibilă</h1>
+            <h1>Fișă indisponibilă</h1>
             <p>{error}</p>
-            <small>Dacă obiectul aparține organizației, cere administratorului o etichetă nouă.</small>
+            <button type="button" className="catalog-button" onClick={() => setAttempt(value => value + 1)}>Reîncearcă</button>
           </div>
         )}
 
-        {!loading && asset && (
+        {!loading && !error && asset && (
           <article className="public-asset-card">
             <div className="public-asset-cover">
-              {asset.image_url ? (
-                <img src={mediaUrl(asset.image_url)} alt={asset.name} />
-              ) : (
-                <div className="public-asset-no-image">
-                  <Icon name="inventory" size={48} />
-                  <span>Fără fotografie</span>
-                </div>
-              )}
+              <AssetImage src={asset.image_url} name={asset.name} />
               <div className="public-cover-chip">{asset.code}</div>
             </div>
 
             <div className="public-asset-content">
               <div className="public-asset-topline">
-                <span className="public-readonly-badge"><Icon name="eye" size={14} /> Vizualizare read-only</span>
-                <span className={`public-status public-status-${asset.status.toLowerCase()}`}>{STATUS_LABELS[asset.status] || asset.status}</span>
+                <span className="public-readonly-badge"><Icon name="eye" size={14} /> Doar consultare</span>
+                <PublicStatus status={asset.status} />
               </div>
 
               <div className="public-asset-title">
@@ -125,17 +103,12 @@ export default function PublicAssetPage({ token, theme, onToggleTheme }) {
 
               <div className="public-asset-footnote">
                 <Icon name="shield" size={17} />
-                <p>Această pagină afișează numai informații de identificare și stare. Datele administrative, persoanele și istoricul intern nu sunt publice.</p>
+                <p>Informațiile despre acest obiect pot fi consultate în catalog sau prin scanarea etichetei QR.</p>
               </div>
             </div>
           </article>
         )}
-      </section>
-
-      <footer className="public-asset-footer">
-        <span><i /> informație sincronizată cu inventarul</span>
-        <span>Asset tracking · Inventar</span>
-      </footer>
-    </main>
+      </main>
+    </PublicLayout>
   );
 }

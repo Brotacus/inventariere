@@ -18,7 +18,9 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_SECONDS = 30
-_FAILED_ATTEMPTS: dict[str, tuple[int, float]] = {}
+ATTEMPT_WINDOW_SECONDS = 300
+MAX_TRACKED_CLIENTS = 4096
+_FAILED_ATTEMPTS: dict[str, tuple[int, float, float]] = {}
 _ATTEMPT_LOCK = Lock()
 
 
@@ -37,10 +39,20 @@ def _client_key(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _purge_failed_attempts_locked(now: float) -> None:
+    expired = [
+        key for key, (_, expires_at, locked_until) in _FAILED_ATTEMPTS.items()
+        if max(expires_at, locked_until) <= now
+    ]
+    for key in expired:
+        _FAILED_ATTEMPTS.pop(key, None)
+
+
 def _remaining_lockout(key: str) -> int:
-    now = time.time()
+    now = time.monotonic()
     with _ATTEMPT_LOCK:
-        attempts, locked_until = _FAILED_ATTEMPTS.get(key, (0, 0.0))
+        _purge_failed_attempts_locked(now)
+        _, _, locked_until = _FAILED_ATTEMPTS.get(key, (0, 0.0, 0.0))
         if locked_until > now:
             return max(1, int(locked_until - now + 0.999))
         if locked_until:
@@ -49,19 +61,23 @@ def _remaining_lockout(key: str) -> int:
 
 
 def _record_failed_attempt(key: str) -> int:
-    now = time.time()
+    now = time.monotonic()
     with _ATTEMPT_LOCK:
-        attempts, locked_until = _FAILED_ATTEMPTS.get(key, (0, 0.0))
+        _purge_failed_attempts_locked(now)
+        if key not in _FAILED_ATTEMPTS and len(_FAILED_ATTEMPTS) >= MAX_TRACKED_CLIENTS:
+            oldest = min(_FAILED_ATTEMPTS, key=lambda item: _FAILED_ATTEMPTS[item][1])
+            _FAILED_ATTEMPTS.pop(oldest, None)
+        attempts, expires_at, locked_until = _FAILED_ATTEMPTS.get(key, (0, now + ATTEMPT_WINDOW_SECONDS, 0.0))
         if locked_until > now:
             return max(1, int(locked_until - now + 0.999))
 
         attempts += 1
         if attempts >= MAX_FAILED_ATTEMPTS:
             locked_until = now + LOCKOUT_SECONDS
-            _FAILED_ATTEMPTS[key] = (0, locked_until)
+            _FAILED_ATTEMPTS[key] = (0, expires_at, locked_until)
             return LOCKOUT_SECONDS
 
-        _FAILED_ATTEMPTS[key] = (attempts, 0.0)
+        _FAILED_ATTEMPTS[key] = (attempts, expires_at, 0.0)
         return 0
 
 
@@ -88,6 +104,7 @@ def login_admin(
         raise HTTPException(
             status_code=429,
             detail=f"Prea multe încercări. Încearcă din nou peste {remaining} secunde.",
+            headers={"Retry-After": str(remaining)},
         )
 
     if not password_is_valid(payload.password):
@@ -96,6 +113,7 @@ def login_admin(
             raise HTTPException(
                 status_code=429,
                 detail=f"Prea multe încercări. Accesul a fost blocat pentru {lockout} secunde.",
+                headers={"Retry-After": str(lockout)},
             )
         raise HTTPException(status_code=401, detail="Parolă incorectă")
 
@@ -110,7 +128,11 @@ def login_admin(
         description="Administratorul s-a autentificat în aplicație.",
         details={"client": key},
     )
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        revoke_session(token)
+        raise
 
     return AdminLoginResponse(token=token, expires_in=ttl)
 

@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.database import get_db
+from app.database import begin_inventory_write, get_db
+from app.services.code_generator import reserve_entity_id
 
 router = APIRouter(prefix="/people", tags=["People"])
 
@@ -66,6 +67,7 @@ def get_person(person_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", response_model=schemas.PersonResponse, status_code=201)
 def create_person(person: schemas.PersonCreate, db: Session = Depends(get_db)):
+    begin_inventory_write(db)
     if not person.name.strip():
         raise HTTPException(status_code=400, detail="Name cannot be empty")
 
@@ -73,6 +75,7 @@ def create_person(person: schemas.PersonCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Selectează cel puțin un rol.")
 
     db_person = models.Person(
+        id=reserve_entity_id(db, models.Person, "person", models.AuditEvent.person_id),
         name=person.name.strip(),
         email=person.email.strip() if person.email else None,
         phone=person.phone.strip() if person.phone else None,
@@ -102,6 +105,7 @@ def update_person(
     person_update: schemas.PersonUpdate,
     db: Session = Depends(get_db),
 ):
+    begin_inventory_write(db)
     db_person = db.query(models.Person).filter(models.Person.id == person_id).first()
 
     if db_person is None:
@@ -167,6 +171,7 @@ def update_person(
 
 @router.delete("/{person_id}")
 def deactivate_person(person_id: int, db: Session = Depends(get_db)):
+    begin_inventory_write(db)
     db_person = db.query(models.Person).filter(models.Person.id == person_id).first()
 
     if db_person is None:

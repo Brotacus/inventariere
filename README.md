@@ -1,3 +1,5 @@
+> **Versiune cu catalog public:** vezi [CATALOG_SI_INSTALARE.md](CATALOG_SI_INSTALARE.md) pentru pornire, păstrarea datelor existente și schimbările incluse. Catalogul public se deschide la `/` sau `/catalog`, iar administrarea este separată la `/admin`. Fișele QR au navigare doar către catalog.
+
 # Inventory Management System
 
 A full-stack inventory management application designed to keep track of devices, equipment, components, locations, responsible persons, loans and activity history.
@@ -286,7 +288,8 @@ http://127.0.0.1:8000
 
 ## API Documentation
 
-FastAPI automatically generates interactive API documentation.
+API documentation is disabled by default. For local development only, set
+`ENABLE_API_DOCS=true` in `backend/.env` and restart the backend to enable the following URLs.
 
 Swagger UI:
 
@@ -433,7 +436,7 @@ Example:
 
 ```env
 ADMIN_PASSWORD=your-secret-password
-RESET_CODE=your-secret-reset-code
+ADMIN_CLEAR_CODE=your-secret-reset-code
 ```
 
 The real `.env` file should be excluded using `.gitignore`.

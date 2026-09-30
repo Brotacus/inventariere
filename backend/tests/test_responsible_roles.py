@@ -8,24 +8,8 @@ import tempfile
 
 import pytest
 
-_test_dir = tempfile.TemporaryDirectory()
-os.environ['DATABASE_URL'] = 'sqlite:///' + str(Path(_test_dir.name) / 'test.db')
-os.environ['ADMIN_PASSWORD'] = 'test-only-password'
-
 from fastapi.testclient import TestClient
 from app.main import app
-from app.database import Base, engine
-
-
-@pytest.fixture
-def client():
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
-    with TestClient(app) as c:
-        response = c.post('/auth/login', json={'password': 'test-only-password'})
-        assert response.status_code == 200
-        c.headers['Authorization'] = 'Bearer ' + response.json()['token']
-        yield c
 
 
 def create(c, path, data):

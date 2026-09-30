@@ -20,6 +20,15 @@ class Device(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
 
+class InventoryCounter(Base):
+    """Persistent identities also survive deletion and an inventory reset."""
+
+    __tablename__ = "inventory_counters"
+
+    name = Column(String, primary_key=True)
+    last_id = Column(Integer, nullable=False, default=0)
+
+
 class Person(Base):
     __tablename__ = "people"
 

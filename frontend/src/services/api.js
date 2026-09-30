@@ -1,8 +1,12 @@
-const API_URL = import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.hostname}:8000`;
+const API_URL = (import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.hostname}:8000`).trim().replace(/\/+$/, "");
 const AUTH_STORAGE_KEY = "inventory-admin-session";
+let memoryToken = "";
+let storageUnavailable = false;
 
 export function getAdminSessionToken() {
-  return window.sessionStorage.getItem(AUTH_STORAGE_KEY) || "";
+  if (storageUnavailable) return memoryToken;
+  try { memoryToken = window.sessionStorage.getItem(AUTH_STORAGE_KEY) || ""; return memoryToken; }
+  catch { storageUnavailable = true; return memoryToken; }
 }
 
 export function hasAdminSession() {
@@ -10,41 +14,83 @@ export function hasAdminSession() {
 }
 
 export function clearAdminSession() {
-  window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
+  memoryToken = "";
+  try { window.sessionStorage.removeItem(AUTH_STORAGE_KEY); } catch { storageUnavailable = true; }
+}
+
+function connectionStatus(status) {
+  window.dispatchEvent(new CustomEvent("inventory-connection", { detail: { status } }));
+}
+
+function responseMessage(data) {
+  if (typeof data?.detail === "string") return data.detail;
+  if (Array.isArray(data?.detail)) {
+    return data.detail.slice(0, 3).map(item => {
+      const field = Array.isArray(item.loc) ? item.loc.filter(value => value !== "body").join(".") : "";
+      return `${field ? `${field}: ` : ""}${item.msg || "valoare invalidă"}`;
+    }).join("; ");
+  }
+  return "A apărut o eroare la comunicarea cu serverul.";
 }
 
 async function apiRequest(path, options = {}) {
   const { skipAuth = false, ...fetchOptions } = options;
   const isFormData = typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
   const token = skipAuth ? "" : getAdminSessionToken();
-
-  const response = await fetch(`${API_URL}${path}`, {
+  let base;
+  try { base = new URL(API_URL, window.location.origin); }
+  catch { throw new Error("Adresa API configurată este invalidă. Verifică VITE_API_URL."); }
+  if (!["http:", "https:"].includes(base.protocol) || base.username || base.password || base.search || base.hash) {
+    throw new Error("Adresa API configurată este invalidă. Verifică VITE_API_URL.");
+  }
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (fetchOptions.signal?.aborted) controller.abort();
+  else fetchOptions.signal?.addEventListener("abort", abort, { once: true });
+  const timeout = window.setTimeout(abort, isFormData ? 60000 : 30000);
+  let response;
+  let text;
+  try {
+    response = await fetch(`${base.href.replace(/\/+$/, "")}${path}`, {
     ...fetchOptions,
+    signal: controller.signal,
+    cache: "no-store",
+    credentials: "omit",
     headers: {
-      ...(isFormData ? {} : { "Content-Type": "application/json" }),
+      ...(!isFormData && fetchOptions.body ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(fetchOptions.headers || {}),
     },
-  });
-
-  const text = await response.text();
+    });
+    text = await response.text();
+  } catch (error) {
+    if (fetchOptions.signal?.aborted) throw error;
+    connectionStatus("offline");
+    throw new Error(controller.signal.aborted
+      ? "Serverul răspunde prea lent. Verifică rezultatul operației înainte de a o repeta."
+      : "Conexiunea cu serverul nu a reușit. Verifică rețeaua și încearcă din nou.");
+  } finally {
+    window.clearTimeout(timeout);
+    fetchOptions.signal?.removeEventListener("abort", abort);
+  }
   let data = null;
 
   if (text) {
     try {
       data = JSON.parse(text);
     } catch {
-      data = text;
+      if (response.ok) {
+        connectionStatus("offline");
+        throw new Error("Serverul a trimis un răspuns invalid. Verifică adresa API.");
+      }
     }
   }
 
   if (!response.ok) {
-    const message =
-      data && typeof data === "object" && data.detail
-        ? data.detail
-        : "A apărut o eroare la comunicarea cu backend-ul.";
+    const message = responseMessage(data);
+    if (response.status >= 500) connectionStatus("offline");
 
-    if (response.status === 401 && !skipAuth && path !== "/auth/login") {
+    if (response.status === 401 && !skipAuth && token === getAdminSessionToken() && path !== "/auth/login") {
       clearAdminSession();
       window.dispatchEvent(new CustomEvent("inventory-auth-required"));
     }
@@ -54,6 +100,7 @@ async function apiRequest(path, options = {}) {
     throw error;
   }
 
+  connectionStatus("online");
   return data;
 }
 
@@ -63,7 +110,9 @@ export async function loginAdmin(password) {
     body: JSON.stringify({ password }),
     skipAuth: true,
   });
-  window.sessionStorage.setItem(AUTH_STORAGE_KEY, result.token);
+  if (typeof result?.token !== "string" || !result.token) throw new Error("Serverul nu a furnizat o sesiune validă.");
+  memoryToken = result.token;
+  try { window.sessionStorage.setItem(AUTH_STORAGE_KEY, result.token); } catch { storageUnavailable = true; }
   return result;
 }
 
@@ -82,14 +131,31 @@ export async function logoutAdmin() {
 }
 
 export function mediaUrl(path) {
-  if (!path) return "";
-  if (/^https?:\/\//i.test(path)) return path;
-  return `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
+  if (!path || typeof path !== "string") return "";
+  if (/^[a-z][a-z0-9+.-]*:/i.test(path)) {
+    try {
+      const url = new URL(path);
+      return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password ? url.href : "";
+    } catch { return ""; }
+  }
+  try {
+    const base = new URL(API_URL, window.location.origin);
+    if (!["http:", "https:"].includes(base.protocol) || base.username || base.password || base.search || base.hash) return "";
+    return `${base.href.replace(/\/+$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
+  } catch { return ""; }
 }
 
 
-export function getPublicAsset(token) {
-  return apiRequest(`/public/assets/${encodeURIComponent(token)}`, { skipAuth: true });
+export function getPublicAsset(token, signal) {
+  return apiRequest(`/public/assets/${encodeURIComponent(token)}`, { skipAuth: true, signal });
+}
+
+export function getPublicCatalog(params, signal) {
+  return apiRequest(`/public/assets/catalog?${params}`, { skipAuth: true, signal });
+}
+
+export function getCatalogAsset(code, signal) {
+  return apiRequest(`/public/assets/catalog/${encodeURIComponent(code)}`, { skipAuth: true, signal });
 }
 
 export function getDevicePublicAccess(deviceId, baseUrl = window.location.origin) {

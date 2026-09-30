@@ -1,0 +1,111 @@
+.route-loading { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; color: var(--text); }
+.route-loading p { margin: 0; }
+.route-loading a { color: var(--primary); padding: 12px; border-radius: 10px; }
+.app-shell :is(button, a, input, select, textarea):focus-visible,
+.login-shell :is(button, a, input):focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.app-shell .icon-button, .app-shell .icon-action { min-width: 44px; min-height: 44px; border-radius: 11px; }
+.app-shell .btn { min-height: 44px; border-radius: 11px; }
+.app-shell .command-trigger { min-height: 44px; }
+.app-shell .row-actions { gap: 8px; }
+.login-input-wrap > button { width: 44px; min-height: 44px; flex: 0 0 auto; border-radius: 9px; }
+.login-catalog-link { min-height: 44px; border-radius: 11px; }
+.login-verification-error { padding: 14px; border: 1px solid var(--border-strong); border-radius: 11px; background: var(--warning-soft); color: var(--text); font-size: 13px; line-height: 1.55; }
+.login-verification-error p { margin: 0 0 10px; }
+.login-verification-error .btn { min-height: 44px; font-size: 13px; }
+.command-close { flex: 0 0 auto; }
+.command-footer { flex-wrap: wrap; gap: 10px; }
+.notification-close { flex: 0 0 auto; }
+.notification-popover-head { flex-wrap: wrap; gap: 8px; }
+.notification-popover-head > div { flex: 1; }
+.notification-popover-head .text-button { order: 3; width: 100%; min-height: 44px; }
+.admin-page-content { display: flex; flex-direction: column; gap: 22px; }
+.reset-modal-backdrop { overflow-y: auto; overscroll-behavior: contain; }
+.reset-modal { max-height: calc(100dvh - 32px); overflow-y: auto; }
+.command-item.selected { background: var(--primary-soft); }
+.command-search input { min-width: 0; }
+.command-backdrop { overflow-y: auto; overscroll-behavior: contain; }
+.command-palette { max-height: calc(100dvh - 110px); display: flex; flex-direction: column; }
+.command-results { overflow-y: auto; min-height: 0; }
+.sidebar-nav { overscroll-behavior: contain; }
+.notification-popover { animation: notification-in .16s ease; max-height: calc(100dvh - 100px); display: flex; flex-direction: column; }
+.notification-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.notification-popover-head, .notification-footer { flex-shrink: 0; }
+.notification-error, .notification-load-status { padding: 14px 16px; font-size: 13px; line-height: 1.5; }
+.notification-error { background: var(--danger-soft); color: var(--danger); }
+.notification-error .text-button { min-height: 44px; }
+.form-fields { min-width: 0; padding: 0; margin: 0; border: 0; display: flex; flex-direction: column; gap: 20px; }
+.management-load-status { margin: 16px; color: var(--text-soft); font-size: 13px; }
+.detail-refresh-status { margin: 0; color: var(--text-soft); font-size: 13px; }
+.connection-offline .status-dot { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+.connection-unknown .status-dot { background: var(--text-faint); box-shadow: 0 0 0 3px var(--surface-soft); }
+.connection-offline { color: var(--danger); }
+.app-shell :is(button, a, select, label:has(input[type="file"])) { touch-action: manipulation; }
+.app-shell .field, .app-shell .detail-main-column, .app-shell .detail-side-column,
+.app-shell .form-panel, .app-shell .location-card-body, .app-shell .panel { min-width: 0; }
+.app-shell :is(.device-detail-hero h2, .device-detail-hero p, .location-card h3, .location-card p,
+.notification-copy, .journal-event-card h3, .journal-event-card p, .device-photo-meta strong) { overflow-wrap: anywhere; }
+.app-shell .alert { flex-wrap: wrap; font-size: 13px; }
+.app-shell .alert > svg { flex-shrink: 0; }
+.app-shell .alert span { min-width: 0; overflow-wrap: anywhere; }
+.app-shell .btn, .app-shell .text-button, .app-shell .journal-details-toggle { font-size: 13px; }
+.app-shell .text-button, .app-shell .journal-details-toggle, .app-shell .segmented-control button,
+.app-shell .public-access-danger-actions button { min-height: 44px; }
+.app-shell .segmented-control button { font-size: 12px; }
+.app-shell .field > span, .app-shell .loan-inline-form label > span,
+.app-shell .public-base-url-field > span { font-size: 12px; }
+.app-shell .field small, .app-shell .location-editor-note, .app-shell .public-base-url-field small,
+.app-shell .public-access-security span, .app-shell .image-dropzone small, .app-shell .image-empty-state small { font-size: 12px; line-height: 1.55; }
+.app-shell .field :is(input:not([type="checkbox"]), select),
+.app-shell .toolbar-filters :is(input, select), .app-shell .public-base-url-field input { min-height: 44px; font-size: 14px; }
+.app-shell .field textarea { font-size: 14px; line-height: 1.6; }
+.app-shell .search-box { height: 44px; }
+.app-shell .search-box input { font-size: 14px; }
+.app-shell td { font-size: 13px; }
+.app-shell th { font-size: 11px; }
+.app-shell .object-cell strong { font-size: 13px; }
+.app-shell .object-cell span, .app-shell .code-pill, .app-shell .badge { font-size: 11px; }
+.app-shell .object-cell > div:last-child { max-width: 320px; }
+.app-shell .object-cell strong { overflow-wrap: anywhere; }
+.app-shell .location-card-body p, .app-shell .location-card-body h3 { font-size: 14px; }
+.app-shell .public-access-actions .btn, .app-shell .public-access-danger-actions button { font-size: 12px; }
+.app-shell .maintenance-card p, .app-shell .danger-zone p, .app-shell .danger-note,
+.app-shell .reset-modal > p, .app-shell .reset-check { font-size: 13px; }
+.app-shell .admin-summary-card span, .app-shell .admin-summary-card small { font-size: 12px; }
+.app-shell .qr-preview img { width: 100%; height: 100%; display: block; }
+.app-shell .public-link-box strong { font-size: 11px; }
+.app-shell .device-photo > a { position: relative; aspect-ratio: 4 / 3; }
+.app-shell .device-photo img { position: absolute; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; object-fit: contain; }
+.app-shell .device-photo .public-asset-no-image { position: absolute; inset: 0; height: 100%; min-height: 0; }
+.app-shell .pending-image > button { min-width: 44px; min-height: 44px; }
+.app-shell :is(.image-dropzone, .image-empty-state, .upload-button) { position: relative; }
+.app-shell :is(.image-dropzone, .image-empty-state, .upload-button) input[type="file"] {
+  display: block; position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
+}
+.app-shell :is(.image-dropzone, .image-empty-state, .upload-button):focus-within { outline: 2px solid var(--primary); outline-offset: 3px; }
+.app-shell label:has(input[type="file"]:disabled) { opacity: .6; cursor: not-allowed; }
+.app-shell label:has(input[type="file"]:disabled) input { cursor: not-allowed; }
+.app-shell .stat-card:hover, .app-shell .location-card:hover { transform: none; }
+.app-shell button:disabled:hover { transform: none; box-shadow: none; }
+@keyframes notification-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 680px) {
+  .app-shell .topbar-actions { gap: 6px; }
+  .app-shell .admin-chip { display: none; }
+  .app-shell .topbar-left { min-width: 0; gap: 8px; }
+  .app-shell .topbar-left > div { min-width: 0; }
+  .app-shell .topbar h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .app-shell .notification-button { display: grid; }
+  .command-palette { max-height: calc(100dvh - 96px); }
+}
+@media (hover: none), (pointer: coarse) {
+  .app-shell .icon-button:hover, .app-shell .device-photo:hover, .app-shell .btn-primary:hover,
+  .app-shell .image-dropzone:hover, .app-shell .image-empty-state:hover { transform: none; }
+  .app-shell .field :is(input:not([type="checkbox"]), textarea, select),
+  .app-shell .toolbar-filters :is(input, select), .app-shell .loan-inline-form select,
+  .app-shell .public-base-url-field input, .app-shell .search-box input, .app-shell .command-search input,
+  .login-shell .login-input-wrap input { font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within { scroll-behavior: auto; }
+  .app-shell *, .app-shell *::before, .app-shell *::after,
+  .login-shell *, .login-shell *::before, .login-shell *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

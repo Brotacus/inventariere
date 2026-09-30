@@ -3,27 +3,31 @@ import json
 import secrets
 import shutil
 import uuid
+import warnings
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
+from PIL import Image, ImageOps, UnidentifiedImageError
+from starlette.concurrency import run_in_threadpool
 
 import qrcode
 import qrcode.image.svg
 
 from app import models, schemas
-from app.database import get_db
-from app.services.code_generator import generate_device_code
+from app.database import begin_inventory_write, get_db
+from app.services.code_generator import generate_device_code, reserve_entity_id
 from app.services.audit import record_activity
+from app.services.security import UPLOAD_DIR
 
 router = APIRouter(prefix="/devices", tags=["Devices"])
 
 VALID_STATUSES = {"AVAILABLE", "LOANED", "IN_USE", "BROKEN", "LOST", "RETIRED"}
 MAX_IMAGE_SIZE = 8 * 1024 * 1024
-BACKEND_DIR = Path(__file__).resolve().parents[2]
-UPLOAD_ROOT = BACKEND_DIR / "uploads" / "devices"
+MAX_IMAGE_PIXELS = 16_000_000
+UPLOAD_ROOT = UPLOAD_DIR / "devices"
 UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 
@@ -31,8 +35,18 @@ UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 def normalize_frontend_base_url(value: str) -> str:
     base_url = (value or "").strip().rstrip("/")
-    parsed = urlparse(base_url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    try:
+        parsed = urlparse(base_url)
+        valid_port = parsed.port is None or 1 <= parsed.port <= 65535
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Frontend base URL must be a valid http/https URL") from None
+    if (
+        parsed.scheme not in {"http", "https"} or not parsed.hostname
+        or parsed.username is not None or parsed.password is not None
+        or parsed.path not in {"", "/"} or parsed.query or parsed.fragment or not valid_port
+        or any(character.isspace() or ord(character) < 32 for character in base_url)
+        or "\\" in base_url
+    ):
         raise HTTPException(status_code=400, detail="Frontend base URL must be a valid http/https URL")
     if len(base_url) > 500:
         raise HTTPException(status_code=400, detail="Frontend base URL is too long")
@@ -182,14 +196,37 @@ def image_to_response(image: models.DeviceImage) -> dict:
     }
 
 
-def detect_image_extension(data: bytes) -> tuple[str, str] | None:
-    if data.startswith(b"\x89PNG\r\n\x1a\n"):
-        return ".png", "image/png"
-    if data.startswith(b"\xff\xd8\xff"):
-        return ".jpg", "image/jpeg"
-    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return ".webp", "image/webp"
-    return None
+def sanitize_image(data: bytes) -> tuple[bytes, str, str]:
+    """Validate decoded raster content and remove metadata/trailing payloads."""
+    formats = {"PNG": (".png", "image/png"), "JPEG": (".jpg", "image/jpeg"), "WEBP": (".webp", "image/webp")}
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(data)) as source:
+                image_format = source.format
+                if image_format not in formats:
+                    raise HTTPException(status_code=400, detail="Only PNG, JPEG and WEBP images are supported")
+                if source.width * source.height > MAX_IMAGE_PIXELS:
+                    raise HTTPException(status_code=413, detail="Image exceeds the maximum of 16 million pixels")
+                if getattr(source, "is_animated", False):
+                    raise HTTPException(status_code=400, detail="Upload a static image")
+                source.verify()
+            with Image.open(io.BytesIO(data)) as source:
+                source.load()
+                oriented = ImageOps.exif_transpose(source)
+                # Saving only pixels discards embedded text, EXIF/GPS and any
+                # bytes appended after the image. Preserve visible alpha.
+                has_alpha = "A" in oriented.getbands() or "transparency" in source.info
+                cleaned = oriented.convert("RGBA" if has_alpha and image_format != "JPEG" else "RGB")
+                cleaned.info.clear()
+                output = io.BytesIO()
+                cleaned.save(output, format=image_format, quality=90)
+                payload = output.getvalue()
+                if len(payload) > MAX_IMAGE_SIZE:
+                    raise HTTPException(status_code=413, detail="Decoded image is larger than 8 MB; reduce its dimensions")
+                return payload, *formats[image_format]
+    except (UnidentifiedImageError, OSError, SyntaxError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning):
+        raise HTTPException(status_code=400, detail="The image is corrupt or cannot be decoded") from None
 
 
 def record_location_change(
@@ -260,6 +297,7 @@ def get_device_images(device_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", response_model=schemas.DeviceResponse, status_code=201)
 def create_device(device: schemas.DeviceCreate, db: Session = Depends(get_db)):
+    begin_inventory_write(db)
     status = device.status.upper()
     validate_status(status)
 
@@ -277,8 +315,10 @@ def create_device(device: schemas.DeviceCreate, db: Session = Depends(get_db)):
     if not device.name.strip() or not device.category.strip():
         raise HTTPException(status_code=400, detail="Name and category are required")
 
+    device_id = reserve_entity_id(db, models.Device, "device", models.AuditEvent.device_id)
     db_device = models.Device(
-        code="TEMP",
+        id=device_id,
+        code=generate_device_code(device_id),
         name=device.name.strip(),
         category=device.category.strip(),
         serial_number=device.serial_number.strip() if device.serial_number else None,
@@ -289,8 +329,6 @@ def create_device(device: schemas.DeviceCreate, db: Session = Depends(get_db)):
     )
 
     db.add(db_device)
-    db.flush()
-    db_device.code = generate_device_code(db_device.id)
     db.flush()
 
     record_location_change(
@@ -376,6 +414,7 @@ def create_or_get_public_access(
     payload: schemas.PublicAccessRequest,
     db: Session = Depends(get_db),
 ):
+    begin_inventory_write(db)
     device = get_device_or_404(db, device_id)
     base_url = normalize_frontend_base_url(payload.base_url)
     link = (
@@ -422,6 +461,7 @@ def regenerate_public_access(
     payload: schemas.PublicAccessRequest,
     db: Session = Depends(get_db),
 ):
+    begin_inventory_write(db)
     device = get_device_or_404(db, device_id)
     base_url = normalize_frontend_base_url(payload.base_url)
     link = (
@@ -454,6 +494,7 @@ def regenerate_public_access(
 
 @router.delete("/{device_id}/public-access")
 def revoke_public_access(device_id: int, db: Session = Depends(get_db)):
+    begin_inventory_write(db)
     device = get_device_or_404(db, device_id)
     link = (
         db.query(models.DevicePublicLink)
@@ -483,6 +524,7 @@ async def upload_device_images(
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
 ):
+    await run_in_threadpool(begin_inventory_write, db)
     device = get_device_or_404(db, device_id)
 
     if not files:
@@ -492,6 +534,8 @@ async def upload_device_images(
 
     device_dir = UPLOAD_ROOT / str(device_id)
     device_dir.mkdir(parents=True, exist_ok=True)
+    if not device_dir.resolve().is_relative_to(UPLOAD_DIR):
+        raise HTTPException(status_code=400, detail="Invalid upload directory")
     created: list[models.DeviceImage] = []
     written_paths: list[Path] = []
 
@@ -504,23 +548,16 @@ async def upload_device_images(
                     detail=f"Image '{upload.filename or 'image'}' is larger than 8 MB",
                 )
 
-            detected = detect_image_extension(data)
-            if detected is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"'{upload.filename or 'image'}' is not a supported PNG, JPEG or WEBP image",
-                )
-
-            extension, content_type = detected
+            data, extension, content_type = await run_in_threadpool(sanitize_image, data)
             stored_name = f"{uuid.uuid4().hex}{extension}"
             target = device_dir / stored_name
-            target.write_bytes(data)
             written_paths.append(target)
+            target.write_bytes(data)
 
             db_image = models.DeviceImage(
                 device_id=device_id,
                 stored_name=stored_name,
-                original_name=(upload.filename or "image")[:255],
+                original_name=(upload.filename or "image").replace("\\", "/").rsplit("/", 1)[-1][:255] or "image",
                 content_type=content_type,
             )
             db.add(db_image)
@@ -552,8 +589,6 @@ async def upload_device_images(
             )
 
         db.commit()
-        for image in created:
-            db.refresh(image)
         return [image_to_response(image) for image in created]
     except Exception:
         db.rollback()
@@ -567,6 +602,7 @@ async def upload_device_images(
 
 @router.delete("/{device_id}/images/{image_id}")
 def delete_device_image(device_id: int, image_id: int, db: Session = Depends(get_db)):
+    begin_inventory_write(db)
     get_device_or_404(db, device_id)
     image = (
         db.query(models.DeviceImage)
@@ -579,7 +615,10 @@ def delete_device_image(device_id: int, image_id: int, db: Session = Depends(get
     if image is None:
         raise HTTPException(status_code=404, detail="Image not found")
 
-    target = UPLOAD_ROOT / str(device_id) / image.stored_name
+    device_dir = (UPLOAD_ROOT / str(device_id)).resolve()
+    target = (device_dir / image.stored_name).resolve()
+    if target.parent != device_dir or not device_dir.is_relative_to(UPLOAD_DIR):
+        raise HTTPException(status_code=400, detail="Invalid stored image path")
     original_name = image.original_name
 
     db.delete(image)
@@ -618,9 +657,12 @@ def update_device(
     device_update: schemas.DeviceUpdate,
     db: Session = Depends(get_db),
 ):
+    begin_inventory_write(db)
     db_device = get_device_or_404(db, device_id)
 
     update_data = device_update.model_dump(exclude_unset=True)
+    if "status" in update_data and update_data["status"] is None:
+        raise HTTPException(status_code=400, detail="Status cannot be null")
     if "status" in update_data and update_data["status"] is not None:
         update_data["status"] = update_data["status"].upper()
         validate_status(update_data["status"])
@@ -784,6 +826,7 @@ def update_device(
 
 @router.delete("/{device_id}")
 def delete_device(device_id: int, db: Session = Depends(get_db)):
+    begin_inventory_write(db)
     db_device = get_device_or_404(db, device_id)
 
     loan_history = (
@@ -800,6 +843,13 @@ def delete_device(device_id: int, db: Session = Depends(get_db)):
     old_value = device_snapshot(db_device)
 
     # Remove tracking-only rows and photo metadata before deleting a device.
+    # Keep technical history, but detach its foreign key before the deletion.
+    db.query(models.Log).filter(models.Log.device_id == device_id).update(
+        {models.Log.device_id: None}, synchronize_session=False
+    )
+    db.query(models.DevicePublicLink).filter(
+        models.DevicePublicLink.device_id == device_id
+    ).delete(synchronize_session=False)
     db.query(models.DeviceLocationHistory).filter(
         models.DeviceLocationHistory.device_id == device_id
     ).delete(synchronize_session=False)
@@ -830,5 +880,7 @@ def delete_device(device_id: int, db: Session = Depends(get_db)):
     db.delete(db_device)
     db.commit()
 
-    shutil.rmtree(UPLOAD_ROOT / str(device_id), ignore_errors=True)
+    device_dir = (UPLOAD_ROOT / str(device_id)).resolve()
+    if device_dir.parent == UPLOAD_ROOT.resolve() and device_dir.is_relative_to(UPLOAD_DIR):
+        shutil.rmtree(device_dir, ignore_errors=True)
     return {"message": "Device deleted"}

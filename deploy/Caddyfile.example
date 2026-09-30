@@ -1,0 +1,31 @@
+# Example only: replace domain and absolute frontend build path.
+# Build with VITE_API_URL=/api before using this file.
+# Keep backend on 127.0.0.1:8000 with exactly one worker.
+inventory.example.com {
+    root * /srv/inventariere/frontend/dist
+    encode zstd gzip
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy no-referrer
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        Strict-Transport-Security "max-age=31536000"
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'"
+        -Server
+    }
+    handle_path /api/* {
+        request_body {
+            max_size 90MB
+        }
+        reverse_proxy 127.0.0.1:8000
+    }
+    handle /assets/* {
+        header Cache-Control "public, max-age=31536000, immutable"
+        file_server
+    }
+    handle {
+        header Cache-Control no-store
+        try_files {path} /index.html
+        file_server
+    }
+}

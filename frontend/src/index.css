@@ -803,8 +803,8 @@ html[data-theme="dark"] .sidebar-overlay { background: rgba(1, 8, 9, .62); }
 
 /* Motion that stays subtle rather than "dashboard demo" */
 @media (prefers-reduced-motion: no-preference) {
-  .page { animation: page-in .24s ease both; }
-  @keyframes page-in { from { opacity: .55; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  .page > :not(.reset-modal-backdrop) { animation: page-in .18s ease; }
+  @keyframes page-in { from { opacity: .65; } to { opacity: 1; } }
 }
 
 @media (max-width: 1100px) {
