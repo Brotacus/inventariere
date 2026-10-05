@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.database import Base, engine, ensure_schema_compatibility, get_db
-from app.routes import auth, admin, devices, journal, locations, loans, logs, notifications, people, public_assets
+from app.routes import auth, admin, devices, journal, locations, loans, logs, notifications, people, public_assets, tags
 from app.services.auth_service import get_session, is_session_valid
 from app.services.security import UPLOAD_DIR
 from app.services.security_middleware import RequestBodyLimitMiddleware
@@ -181,6 +181,7 @@ app.include_router(journal.router)
 app.include_router(notifications.router)
 app.include_router(admin.router)
 app.include_router(public_assets.router)
+app.include_router(tags.router)
 
 
 @app.get("/")

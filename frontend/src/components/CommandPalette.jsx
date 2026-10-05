@@ -6,6 +6,7 @@ const destinations = [
   { page: "Dashboard", label: "Dashboard", description: "Prezentare generală și indicatori", icon: "dashboard" },
   { page: "Inventory", label: "Inventar", description: "Caută și gestionează obiectele", icon: "inventory" },
   { page: "Add Device", label: "Adaugă obiect", description: "Înregistrează echipament nou", icon: "plus" },
+  { page: "Tags", label: "Etichete", description: "Tipărește loturi de etichete cu cod de bare", icon: "tag" },
   { page: "People", label: "Persoane", description: "Contacte și responsabili", icon: "people" },
   { page: "Locations", label: "Locații", description: "Spații și puncte de inventar", icon: "locations" },
   { page: "Loans", label: "Împrumuturi", description: "Predări, retururi și evidență", icon: "loans" },

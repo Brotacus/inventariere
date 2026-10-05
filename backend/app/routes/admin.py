@@ -86,6 +86,8 @@ def clear_all_application_data(
     backup_path = _required_backup("before_clear")
 
     deleted = {
+        "asset_tags": db.query(models.AssetTag).count(),
+        "asset_tag_batches": db.query(models.AssetTagBatch).count(),
         "device_public_links": db.query(models.DevicePublicLink).count(),
         "device_images": db.query(models.DeviceImage).count(),
         "device_location_history": db.query(models.DeviceLocationHistory).count(),
@@ -115,6 +117,9 @@ def clear_all_application_data(
 
     try:
         # Delete in dependency-safe order. The schema itself remains intact.
+        # Tag numbers keep counting afterwards, so old stickers never collide.
+        db.query(models.AssetTag).delete(synchronize_session=False)
+        db.query(models.AssetTagBatch).delete(synchronize_session=False)
         db.query(models.DevicePublicLink).delete(synchronize_session=False)
         db.query(models.DeviceImage).delete(synchronize_session=False)
         db.query(models.DeviceLocationHistory).delete(synchronize_session=False)

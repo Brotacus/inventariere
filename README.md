@@ -112,11 +112,24 @@ This provides a history of changes made to the inventory.
 
 ---
 
-### QR Codes and Labels
+### Asset Tags (Barcode Labels)
 
-Each inventory object can generate a QR code or printable label.
+Labels are printed in advance and an object enters the inventory when a label is stuck on it:
 
-Scanning the QR code opens a dedicated public page for that asset.
+1. **Etichete** page: generate a batch of numbered tags (`INV-000001`, `INV-000002`, …) and print them on A4 adhesive label sheets. Common sheet formats are built in, including 65-label sheets (38.1 × 21.2 mm, 5 × 13); already-used positions on a partly used sheet can be skipped. Print at 100% scale with no margins.
+2. Stick a tag on the object.
+3. **Adaugă obiect**: scan the tag, fill in the object's details and save. A tag is required: the tag is the object's physical identity, and the app also assigns its internal code (`DEV-00001`).
+
+Tags are Code 128 barcodes. A USB or Bluetooth barcode scanner works as a keyboard:
+
+* scanning a tag in the **Inventar** search opens its object;
+* scanning a tag that is not on an object yet opens **Adaugă obiect** with the tag filled in.
+
+A damaged tag is replaced from the object's page (the old tag is voided); objects added before tags existed get theirs the same way. Lost or damaged unused tags can be voided on the **Etichete** page. Tag numbers are never reused, even after deletions or a data reset.
+
+### QR Codes and Public Pages
+
+An object can also get a QR code. Scanning the QR code opens a dedicated public page for that asset.
 
 The public page is designed for normal users and does not provide administrative controls.
 

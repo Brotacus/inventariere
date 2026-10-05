@@ -19,6 +19,7 @@ import qrcode.image.svg
 from app import models, schemas
 from app.database import begin_inventory_write, get_db
 from app.services.code_generator import generate_device_code, reserve_entity_id
+from app.routes.tags import find_assignable_tag, mark_assigned, mark_void, record_tag_change
 from app.services.audit import record_activity
 from app.services.security import UPLOAD_DIR
 
@@ -133,6 +134,7 @@ def device_snapshot(device: models.Device) -> str:
             "location_id": device.location_id,
             "responsible_person_id": device.responsible_person_id,
             "description": device.description,
+            "tag_code": device.tag_code,
         },
         ensure_ascii=False,
     )
@@ -314,6 +316,9 @@ def create_device(device: schemas.DeviceCreate, db: Session = Depends(get_db)):
 
     if not device.name.strip() or not device.category.strip():
         raise HTTPException(status_code=400, detail="Name and category are required")
+    if not device.tag_code:
+        raise HTTPException(status_code=400, detail="Scanează eticheta lipită pe obiect. Etichetele se tipăresc din pagina Etichete.")
+    tag = find_assignable_tag(db, device.tag_code)
 
     device_id = reserve_entity_id(db, models.Device, "device", models.AuditEvent.device_id)
     db_device = models.Device(
@@ -330,6 +335,10 @@ def create_device(device: schemas.DeviceCreate, db: Session = Depends(get_db)):
 
     db.add(db_device)
     db.flush()
+    # Sticking a pre-printed tag on the item is what brings it into the inventory.
+    mark_assigned(tag, db_device)
+    db.flush()
+    db.expire(db_device, ["tag"])
 
     record_location_change(
         db,
@@ -364,7 +373,10 @@ def create_device(device: schemas.DeviceCreate, db: Session = Depends(get_db)):
         category="INVENTORY",
         severity="INFO",
         title="Obiect adăugat în inventar",
-        description=f"{db_device.code} · {db_device.name} a fost înregistrat în locația {location.name}.",
+        description=(
+            f"{db_device.code} · {db_device.name} a fost înregistrat în locația {location.name} "
+            f"cu eticheta {tag.code}."
+        ),
         entity_type="device",
         entity_id=db_device.id,
         device_id=db_device.id,
@@ -375,6 +387,7 @@ def create_device(device: schemas.DeviceCreate, db: Session = Depends(get_db)):
             "category": db_device.category,
             "status": db_device.status,
             "location_name": location.name,
+            "tag_code": tag.code,
         },
         notify=True,
     )
@@ -516,6 +529,37 @@ def revoke_public_access(device_id: int, db: Session = Depends(get_db)):
     )
     db.commit()
     return {"message": "Public access revoked"}
+
+
+@router.post("/{device_id}/tag", response_model=schemas.DeviceResponse)
+def assign_device_tag(device_id: int, payload: schemas.TagAssignRequest, db: Session = Depends(get_db)):
+    begin_inventory_write(db)
+    device = get_device_or_404(db, device_id)
+    old = device.tag
+    if old is not None and old.code == payload.tag_code:
+        return device
+
+    tag = find_assignable_tag(db, payload.tag_code)
+    if old is not None:
+        mark_void(old)
+        db.flush()
+    mark_assigned(tag, device)
+    db.flush()
+    if old is not None:
+        record_tag_change(
+            db, device, "DEVICE_TAG_REPLACED", "Etichetă înlocuită",
+            f"{device.code} · {device.name}: eticheta {old.code} a fost înlocuită cu {tag.code}; {old.code} a fost anulată.",
+            old.code, tag.code,
+        )
+    else:
+        record_tag_change(
+            db, device, "DEVICE_TAG_ASSIGNED", "Etichetă asociată",
+            f"Eticheta {tag.code} a fost asociată cu {device.code} · {device.name}.",
+            None, tag.code,
+        )
+    db.commit()
+    db.expire(device, ["tag"])
+    return device
 
 
 @router.post("/{device_id}/images", response_model=list[schemas.DeviceImageResponse], status_code=201)
@@ -877,6 +921,10 @@ def delete_device(device_id: int, db: Session = Depends(get_db)):
         details={"snapshot": json.loads(old_value)},
         notify=True,
     )
+    if db_device.tag is not None:
+        # A removed sticker must not be stuck on another item by mistake.
+        mark_void(db_device.tag)
+        db.flush()
     db.delete(db_device)
     db.commit()
 

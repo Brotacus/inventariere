@@ -52,7 +52,7 @@ export default function DeviceTable({ devices = [], locationMap = {}, onDelete, 
                     <div><strong>{device.name}</strong><span>{device.serial_number || "Fără serie"}</span></div>
                   </div>
                 </td>
-                <td><code className="code-pill">{device.code || "-"}</code></td>
+                <td><code className="code-pill">{device.code || "-"}</code>{device.tag_code ? <span className="device-tag-code" title="Etichetă">{device.tag_code}</span> : <span className="device-tag-code missing">fără etichetă</span>}</td>
                 <td>{device.category}</td>
                 <td>
                   <div className={`location-cell ${location ? "" : "missing"}`}>

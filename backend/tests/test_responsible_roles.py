@@ -10,6 +10,7 @@ import pytest
 
 from fastapi.testclient import TestClient
 from app.main import app
+from tests.tagging import next_tag
 
 
 def create(c, path, data):
@@ -24,7 +25,7 @@ def person(c, responsible=False, borrower=True, name='Person'):
 
 def device(c, owner=None):
     location = create(c, '/locations/', {'name': 'Room'})
-    return create(c, '/devices/', dict(name='Camera', category='Video', location_id=location['id'], responsible_person_id=owner))
+    return create(c, '/devices/', dict(name='Camera', category='Video', location_id=location['id'], responsible_person_id=owner, tag_code=next_tag(c)))
 
 
 def test_assignment_survives_loan_return_and_can_change_during_loan(client):

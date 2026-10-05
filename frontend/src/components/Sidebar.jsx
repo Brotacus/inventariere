@@ -12,6 +12,7 @@ const groups = [
     items: [
       { page: "Inventory", label: "Inventar", icon: "inventory" },
       { page: "Add Device", label: "Adaugă obiect", icon: "plus" },
+      { page: "Tags", label: "Etichete", icon: "tag" },
       { page: "People", label: "Persoane", icon: "people" },
       { page: "Locations", label: "Locații", icon: "locations" },
       { page: "Loans", label: "Împrumuturi", icon: "loans" },
