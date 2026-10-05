@@ -285,7 +285,7 @@ def test_unexpected_errors_do_not_expose_internal_details(client, monkeypatch):
     def fail_auth(token):
         raise RuntimeError("private database credentials")
 
-    monkeypatch.setattr(main, "is_session_valid", fail_auth)
+    monkeypatch.setattr(main, "get_session", fail_auth)
     with TestClient(app, raise_server_exceptions=False) as public:
         response = public.get("/people/")
     assert response.status_code == 500

@@ -44,6 +44,23 @@ Admin authentication is required when accessing the administrative part of the a
 
 Administrative credentials should not be stored in this README or committed publicly to the repository.
 
+Two sign-in methods are supported, and either can be turned off:
+
+* **LDAP (for example FreeIPA):** administrators sign in with their own directory account. Only members of `LDAP_REQUIRED_GROUP_DN` are admitted, and the journal records who signed in.
+* **Local password:** a single shared `ADMIN_PASSWORD`, useful as a fallback when the directory is unreachable. Leave it empty to allow LDAP login only.
+
+LDAP is configured in `backend/.env` (see `backend/.env.example`):
+
+```text
+LDAP_SERVER_URI=ldaps://ldap.example.com
+LDAP_USER_DN_TEMPLATE=uid={username},cn=users,cn=accounts,dc=example,dc=com
+LDAP_REQUIRED_GROUP_DN=cn=inventory-admins,cn=groups,cn=accounts,dc=example,dc=com
+# Needed when the server's CA is not in the system trust store:
+LDAP_CA_CERT_FILE=/etc/ipa/ca.crt
+```
+
+The server certificate and host name are always verified. Plain `ldap://` is accepted only with `LDAP_START_TLS=true`. Group membership is checked when someone signs in, so removing a person from the group takes effect at their next sign-in (sessions last at most `ADMIN_SESSION_TTL_SECONDS`).
+
 ---
 
 ### Locations
@@ -169,6 +186,7 @@ The backend database layer can also be configured through a `DATABASE_URL`.
 * Uvicorn
 * SQLite
 * python-dotenv
+* ldap3 (optional LDAP login)
 
 ### Frontend
 

@@ -2,25 +2,52 @@ import { useEffect, useRef, useState } from "react";
 
 import Icon from "./Icon";
 import usePendingAction from "../hooks/usePendingAction";
+import { getLoginMethods } from "../services/api";
 
 export default function LoginScreen({ theme, onToggleTheme, onLogin, checking = false, verificationError = "", onRetryVerification }) {
+  const [methods, setMethods] = useState({ password: true, ldap: false });
+  const [mode, setMode] = useState("password");
+  const [methodsError, setMethodsError] = useState("");
+  const [methodsAttempt, setMethodsAttempt] = useState(0);
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [capsLock, setCapsLock] = useState(false);
   const { busy: submitting, beginAction, endAction } = usePendingAction();
   const [error, setError] = useState("");
   const inputRef = useRef(null);
+  const usernameRef = useRef(null);
+  const ldap = mode === "ldap";
+  const canSubmit = Boolean(password && (!ldap || username.trim()));
 
   useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+    const controller = new AbortController();
+    setMethodsError("");
+    getLoginMethods(controller.signal).then((available) => {
+      setMethods({ password: Boolean(available?.password), ldap: Boolean(available?.ldap) });
+      setMode(available?.ldap ? "ldap" : "password");
+    }).catch((err) => {
+      // Say so instead of silently offering a form that may not be enabled.
+      if (!controller.signal.aborted) setMethodsError(err.message || "Serverul nu a răspuns.");
+    });
+    return () => controller.abort();
+  }, [methodsAttempt]);
+
+  useEffect(() => {
+    (ldap ? usernameRef : inputRef).current?.focus();
+  }, [ldap]);
+
+  function chooseMode(next) {
+    setMode(next);
+    setError("");
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (!password || checking || !beginAction()) return;
+    if (!canSubmit || checking || !beginAction()) return;
     setError("");
     try {
-      await onLogin(password);
+      await onLogin(password, ldap ? username.trim() : "");
       setPassword("");
     } catch (err) {
       setError(err.message || "Autentificarea nu a reușit.");
@@ -84,18 +111,55 @@ export default function LoginScreen({ theme, onToggleTheme, onLogin, checking = 
               <div className="login-lock-icon"><Icon name="lock" size={20} /></div>
               <span>ACCES RESTRICȚIONAT</span>
               <h2>Autentificare administrator</h2>
-              <p>Introdu parola de administrator pentru a continua în workspace.</p>
+              <p>{ldap
+                ? "Autentifică-te cu contul instituțional (LDAP) pentru a continua în workspace."
+                : "Introdu parola de administrator pentru a continua în workspace."}</p>
             </div>
 
             <form className="login-form" onSubmit={handleSubmit}>
-              <label className="login-identity-field">
-                <span>Cont</span>
-                <div>
-                  <Icon name="user" size={17} />
-                  <strong>Administrator</strong>
-                  <em>LOCAL ADMIN</em>
+              {methods.ldap && methods.password && (
+                <div className="segmented-control login-method-switch" role="group" aria-label="Metodă de autentificare">
+                  <button type="button" className={ldap ? "active" : ""} aria-pressed={ldap} disabled={submitting || checking} onClick={() => chooseMode("ldap")}>Cont LDAP</button>
+                  <button type="button" className={!ldap ? "active" : ""} aria-pressed={!ldap} disabled={submitting || checking} onClick={() => chooseMode("password")}>Administrator local</button>
                 </div>
-              </label>
+              )}
+
+              {ldap ? (
+                <label className="login-password-field">
+                  <div className="login-field-label"><span>Utilizator</span></div>
+                  <div className={`login-input-wrap ${error ? "has-error" : ""}`}>
+                    <Icon name="user" size={17} />
+                    <input
+                      ref={usernameRef}
+                      type="text"
+                      value={username}
+                      onChange={(event) => {
+                        setUsername(event.target.value);
+                        if (error) setError("");
+                      }}
+                      placeholder="nume.utilizator"
+                      autoComplete="username"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      name="username"
+                      maxLength={64}
+                      required
+                      aria-invalid={Boolean(error)}
+                      aria-describedby={error ? "login-error" : undefined}
+                      disabled={submitting || checking}
+                    />
+                  </div>
+                </label>
+              ) : (
+                <label className="login-identity-field">
+                  <span>Cont</span>
+                  <div>
+                    <Icon name="user" size={17} />
+                    <strong>Administrator</strong>
+                    <em>LOCAL ADMIN</em>
+                  </div>
+                </label>
+              )}
 
               <label className="login-password-field">
                 <div className="login-field-label">
@@ -141,6 +205,15 @@ export default function LoginScreen({ theme, onToggleTheme, onLogin, checking = 
                 </div>
               )}
 
+              {methodsError && (
+                <div className="login-verification-error" role="alert">
+                  <p>Metodele de autentificare nu au putut fi încărcate. {methodsError}</p>
+                  <button type="button" className="btn btn-secondary" disabled={submitting} onClick={() => setMethodsAttempt(attempt => attempt + 1)}>
+                    Reîncearcă
+                  </button>
+                </div>
+              )}
+
               {verificationError && (
                 <div className="login-verification-error" role="alert">
                   <p>{verificationError}</p>
@@ -150,7 +223,7 @@ export default function LoginScreen({ theme, onToggleTheme, onLogin, checking = 
                 </div>
               )}
 
-              <button className="login-submit" type="submit" disabled={!password || submitting || checking}>
+              <button className="login-submit" type="submit" disabled={!canSubmit || submitting || checking}>
                 {submitting || checking ? (
                   <><span className="login-spinner" /> Se verifică accesul...</>
                 ) : (

@@ -37,6 +37,7 @@ export default function AdminApp({ theme, onToggleTheme }) {
   const [commandOpen, setCommandOpen] = useState(false);
   const [error, setError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
+  const [admin, setAdmin] = useState(null);
   const devicesRequest = useRef(0);
   const { busy: deleting, beginAction: beginDelete, endAction: endDelete } = usePendingAction();
 
@@ -64,8 +65,9 @@ export default function AdminApp({ theme, onToggleTheme }) {
       }
 
       try {
-        await getCurrentAdmin();
+        const current = await getCurrentAdmin();
         if (!cancelled && session === getAdminSessionToken()) {
+          setAdmin(current);
           setVerificationError("");
           setAuthState("authenticated");
         }
@@ -89,6 +91,7 @@ export default function AdminApp({ theme, onToggleTheme }) {
     function requireAuthentication() {
       devicesRequest.current += 1;
       setAuthState("unauthenticated");
+      setAdmin(null);
       setDevices([]);
       setError("");
       setVerificationError("");
@@ -123,8 +126,8 @@ export default function AdminApp({ theme, onToggleTheme }) {
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [authState]);
 
-  async function handleLogin(password) {
-    await loginAdmin(password);
+  async function handleLogin(password, username) {
+    setAdmin(await loginAdmin(password, username));
     setAuthState("authenticated");
     setVerificationError("");
     setCurrentPage("Dashboard");
@@ -141,6 +144,7 @@ export default function AdminApp({ theme, onToggleTheme }) {
       clearAdminSession();
     }
     setAuthState("unauthenticated");
+    setAdmin(null);
     setDevices([]);
     setCurrentPage("Dashboard");
     setSelectedDeviceId(null);
@@ -236,6 +240,7 @@ export default function AdminApp({ theme, onToggleTheme }) {
           onNavigate={navigate}
           onLogout={handleLogout}
           loggingOut={loggingOut}
+          admin={admin}
         />
 
         <main className="main-content">

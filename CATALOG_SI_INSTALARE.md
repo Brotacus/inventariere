@@ -7,7 +7,7 @@ Revizuirea completă din 30 septembrie 2026 este descrisă în [REVIZUIRE.md](RE
 Necesită Python 3.10+ și Node.js 22.12+ (sau 20.19+).
 
 1. Dezarhivează întregul folder `inventariere`.
-2. Copiază `backend/.env.example` în `backend/.env` și completează `ADMIN_PASSWORD`. Opțional, setează separat `ADMIN_CLEAR_CODE` pentru resetarea datelor.
+2. Copiază `backend/.env.example` în `backend/.env` și completează `ADMIN_PASSWORD`. Opțional, setează separat `ADMIN_CLEAR_CODE` pentru resetarea datelor. Pentru autentificare cu conturi LDAP/FreeIPA completează variabilele `LDAP_*` (detalii în README); doar membrii grupului `LDAP_REQUIRED_GROUP_DN` pot intra, iar `ADMIN_PASSWORD` poate rămâne gol dacă vrei doar LDAP.
 3. Rulează `start_backend.bat`, apoi `start_frontend.bat`. Lasă ambele ferestre deschise.
 4. Administrare: `http://localhost:5173/admin`. Catalog public: `http://localhost:5173/catalog`.
 

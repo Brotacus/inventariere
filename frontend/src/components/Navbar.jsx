@@ -15,7 +15,8 @@ const pageLabels = {
   Admin: "Administrare sistem",
 };
 
-export default function Navbar({ onToggleSidebar, currentPage, theme, onToggleTheme, onOpenCommand, onNavigate, onLogout, loggingOut = false }) {
+export default function Navbar({ onToggleSidebar, currentPage, theme, onToggleTheme, onOpenCommand, onNavigate, onLogout, loggingOut = false, admin = null }) {
+  const adminName = admin?.admin || "Administrator";
   const [connection, setConnection] = useState("unknown");
   useEffect(() => {
     function update(event) { setConnection(event.detail?.status || "unknown"); }
@@ -65,10 +66,10 @@ export default function Navbar({ onToggleSidebar, currentPage, theme, onToggleTh
         <NotificationCenter onNavigate={onNavigate} />
 
         <div className="admin-chip">
-          <div className="avatar">A</div>
+          <div className="avatar" aria-hidden="true">{adminName.charAt(0).toUpperCase()}</div>
           <div className="admin-copy">
-            <strong>Administrator</strong>
-            <span>Sesiune activă</span>
+            <strong>{adminName}</strong>
+            <span>{admin?.method === "ldap" ? `LDAP · ${admin.username}` : "Sesiune activă"}</span>
           </div>
         </div>
 
