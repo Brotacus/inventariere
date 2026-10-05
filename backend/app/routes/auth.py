@@ -1,13 +1,17 @@
 import time
 from threading import Lock
+from typing import NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.services import ldap_auth
 from app.services.audit import record_activity
 from app.services.auth_service import (
+    LOCAL_ADMIN,
+    AdminIdentity,
     create_session,
     get_configured_password,
     password_is_valid,
@@ -25,6 +29,8 @@ _ATTEMPT_LOCK = Lock()
 
 
 class AdminLoginRequest(BaseModel):
+    # A username selects LDAP login; without one the local admin password is used.
+    username: str | None = Field(default=None, max_length=64)
     password: str = Field(min_length=1, max_length=256)
 
 
@@ -33,6 +39,8 @@ class AdminLoginResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     admin: str = "Administrator"
+    username: str
+    method: str
 
 
 def _client_key(request: Request) -> str:
@@ -86,13 +94,50 @@ def _clear_failed_attempts(key: str) -> None:
         _FAILED_ATTEMPTS.pop(key, None)
 
 
+def _reject_login(key: str, status_code: int, detail: str) -> NoReturn:
+    lockout = _record_failed_attempt(key)
+    if lockout:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Prea multe încercări. Accesul a fost blocat pentru {lockout} secunde.",
+            headers={"Retry-After": str(lockout)},
+        )
+    raise HTTPException(status_code=status_code, detail=detail)
+
+
+def _identity_payload(identity: AdminIdentity) -> dict:
+    return {"admin": identity.display_name, "username": identity.username, "method": identity.method}
+
+
+def _ldap_identity(key: str, username: str, password: str) -> AdminIdentity:
+    try:
+        user = ldap_auth.authenticate(username, password)
+    except ldap_auth.LdapInvalidCredentials:
+        _reject_login(key, 401, "Utilizator sau parolă incorectă")
+    except ldap_auth.LdapNotAuthorized:
+        _reject_login(key, 403, "Contul nu are acces la administrarea inventarului.")
+    except ldap_auth.LdapUnavailable:
+        # A directory outage is not the user's mistake; it never counts as a
+        # failed attempt. The reason is logged by the LDAP service.
+        raise HTTPException(status_code=503, detail="Serverul LDAP nu este disponibil. Încearcă din nou.") from None
+    return AdminIdentity(username=user.username, display_name=user.display_name, method="ldap")
+
+
+@router.get("/methods")
+def login_methods():
+    return {"password": bool(get_configured_password()), "ldap": ldap_auth.ldap_enabled()}
+
+
 @router.post("/login", response_model=AdminLoginResponse)
 def login_admin(
     payload: AdminLoginRequest,
     request: Request,
     db: Session = Depends(get_db),
 ):
-    if not get_configured_password():
+    username = (payload.username or "").strip()
+    if username and not ldap_auth.ldap_enabled():
+        raise HTTPException(status_code=503, detail="LDAP_SERVER_URI is not configured in backend/.env")
+    if not username and not get_configured_password():
         raise HTTPException(
             status_code=503,
             detail="ADMIN_PASSWORD is not configured in backend/.env",
@@ -107,26 +152,26 @@ def login_admin(
             headers={"Retry-After": str(remaining)},
         )
 
-    if not password_is_valid(payload.password):
-        lockout = _record_failed_attempt(key)
-        if lockout:
-            raise HTTPException(
-                status_code=429,
-                detail=f"Prea multe încercări. Accesul a fost blocat pentru {lockout} secunde.",
-                headers={"Retry-After": str(lockout)},
-            )
-        raise HTTPException(status_code=401, detail="Parolă incorectă")
+    if username:
+        identity = _ldap_identity(key, username, payload.password)
+    elif password_is_valid(payload.password):
+        identity = LOCAL_ADMIN
+    else:
+        _reject_login(key, 401, "Parolă incorectă")
 
     _clear_failed_attempts(key)
-    token, ttl = create_session()
+    token, ttl = create_session(identity)
 
     record_activity(
         db,
         event_type="ADMIN_LOGIN",
         category="SECURITY",
         title="Autentificare administrator",
-        description="Administratorul s-a autentificat în aplicație.",
-        details={"client": key},
+        description=(
+            f"{identity.display_name} ({identity.username}) s-a autentificat prin LDAP."
+            if identity.method == "ldap" else "Administratorul s-a autentificat în aplicație."
+        ),
+        details={"client": key, "username": identity.username, "method": identity.method},
     )
     try:
         db.commit()
@@ -134,13 +179,13 @@ def login_admin(
         revoke_session(token)
         raise
 
-    return AdminLoginResponse(token=token, expires_in=ttl)
+    return AdminLoginResponse(token=token, expires_in=ttl, **_identity_payload(identity))
 
 
 @router.get("/me")
-def current_admin():
+def current_admin(request: Request):
     # Authentication for this endpoint is enforced by the application middleware.
-    return {"authenticated": True, "admin": "Administrator"}
+    return {"authenticated": True, **_identity_payload(request.state.admin)}
 
 
 @router.post("/logout")
@@ -148,13 +193,18 @@ def logout_admin(request: Request, db: Session = Depends(get_db)):
     auth_header = request.headers.get("Authorization", "")
     token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else None
     revoke_session(token)
+    identity: AdminIdentity = request.state.admin
 
     record_activity(
         db,
         event_type="ADMIN_LOGOUT",
         category="SECURITY",
         title="Deconectare administrator",
-        description="Sesiunea administratorului a fost închisă.",
+        description=(
+            f"Sesiunea lui {identity.display_name} ({identity.username}) a fost închisă."
+            if identity.method == "ldap" else "Sesiunea administratorului a fost închisă."
+        ),
+        details={"username": identity.username, "method": identity.method},
     )
     db.commit()
 

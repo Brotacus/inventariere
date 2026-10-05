@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.database import Base, engine, ensure_schema_compatibility, get_db
 from app.routes import auth, admin, devices, journal, locations, loans, logs, notifications, people, public_assets
-from app.services.auth_service import is_session_valid
+from app.services.auth_service import get_session, is_session_valid
 from app.services.security import UPLOAD_DIR
 from app.services.security_middleware import RequestBodyLimitMiddleware
 
@@ -53,6 +53,7 @@ def _unauthorized_response() -> JSONResponse:
 PUBLIC_EXACT_PATHS = {
     "/",
     "/auth/login",
+    "/auth/methods",
 }
 if API_DOCS_ENABLED:
     # Documentation is an explicit development opt-in, disabled by default.
@@ -71,8 +72,10 @@ async def require_admin_session(request: Request, call_next):
     auth_header = request.headers.get("Authorization", "")
     token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else None
 
-    if not public and not is_session_valid(token):
+    admin = None if public else get_session(token)
+    if not public and admin is None:
         return _unauthorized_response()
+    request.state.admin = admin
 
     if not public and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         # Keep backups, image writes, resets and inventory changes consistent in
