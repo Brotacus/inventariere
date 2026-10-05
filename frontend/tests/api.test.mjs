@@ -133,3 +133,21 @@ test("request deadlines release the UI without automatically retrying a mutation
   await assert.rejects(pending, /Verifică rezultatul operației/);
   assert.equal(calls, 1);
 });
+
+test("LDAP login sends the username; local login and method discovery stay anonymous", async () => {
+  const { api, values } = await setup();
+  values.set("inventory-admin-session", "saved-token");
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return url.endsWith("/auth/methods") ? json({ password: true, ldap: true }) : json({ token: `token-${requests.length}` });
+  };
+  assert.deepEqual(await api.getLoginMethods(), { password: true, ldap: true });
+  await api.loginAdmin("ldap-secret", "ana");
+  await api.loginAdmin("local-secret");
+  assert.equal(requests[0].options.headers.Authorization, undefined);
+  assert.deepEqual(JSON.parse(requests[1].options.body), { username: "ana", password: "ldap-secret" });
+  assert.deepEqual(JSON.parse(requests[2].options.body), { password: "local-secret" });
+  assert.equal(requests[1].options.headers.Authorization, undefined);
+  assert.equal(api.getAdminSessionToken(), "token-3");
+});

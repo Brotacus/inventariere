@@ -104,10 +104,15 @@ async function apiRequest(path, options = {}) {
   return data;
 }
 
-export async function loginAdmin(password) {
+export function getLoginMethods(signal) {
+  return apiRequest("/auth/methods", { skipAuth: true, signal });
+}
+
+// A username selects LDAP login; without one the local admin password is used.
+export async function loginAdmin(password, username = "") {
   const result = await apiRequest("/auth/login", {
     method: "POST",
-    body: JSON.stringify({ password }),
+    body: JSON.stringify(username ? { username, password } : { password }),
     skipAuth: true,
   });
   if (typeof result?.token !== "string" || !result.token) throw new Error("Serverul nu a furnizat o sesiune validă.");

@@ -14,6 +14,9 @@ os.environ["BACKUP_DIR"] = str(_test_root / "backups")
 os.environ["ENABLE_API_DOCS"] = "false"
 os.environ["CORS_ALLOWED_ORIGINS"] = "http://localhost:5173,http://127.0.0.1:5173"
 os.environ["CORS_ALLOW_LAN"] = "true"
+# Keep a developer's backend/.env from enabling LDAP; LDAP tests opt in.
+for _name in ("LDAP_SERVER_URI", "LDAP_START_TLS", "LDAP_USER_DN_TEMPLATE", "LDAP_REQUIRED_GROUP_DN", "LDAP_CA_CERT_FILE"):
+    os.environ[_name] = ""
 
 from fastapi.testclient import TestClient
 from app.main import app

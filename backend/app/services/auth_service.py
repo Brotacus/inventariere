@@ -2,13 +2,25 @@ import hashlib
 import os
 import secrets
 import time
+from dataclasses import dataclass
 from threading import Lock
 
+from app.services import ldap_auth
 from app.services.security import secrets_match
+
+
+@dataclass(frozen=True)
+class AdminIdentity:
+    username: str
+    display_name: str
+    method: str  # "password" (shared local admin) or "ldap"
+
+
+LOCAL_ADMIN = AdminIdentity(username="admin", display_name="Administrator", method="password")
 
 # Sessions intentionally live in process memory. For this development app that
 # means a backend restart invalidates every admin session automatically.
-_SESSIONS: dict[str, tuple[float, bytes]] = {}
+_SESSIONS: dict[str, tuple[float, bytes | None, AdminIdentity]] = {}
 _LOCK = Lock()
 MAX_SESSIONS = 1000
 
@@ -32,12 +44,19 @@ def password_is_valid(password: str) -> bool:
     return secrets_match(password, expected)
 
 
-def _credential_fingerprint() -> bytes:
-    password = get_configured_password() or ""
-    return hashlib.sha256(password.encode("utf-8", errors="surrogatepass")).digest()
+def _credential_fingerprint(method: str) -> bytes | None:
+    # Changing the admin password or the LDAP settings revokes the sessions
+    # issued under the old value; disabling a method revokes all of them.
+    if method == "ldap":
+        secret = ldap_auth.config_fingerprint()
+    else:
+        secret = get_configured_password()
+    if secret is None:
+        return None
+    return hashlib.sha256(f"{method}:{secret}".encode("utf-8", errors="surrogatepass")).digest()
 
 
-def create_session() -> tuple[str, int]:
+def create_session(identity: AdminIdentity = LOCAL_ADMIN) -> tuple[str, int]:
     ttl = _session_ttl_seconds()
     token = secrets.token_urlsafe(48)
     expires_at = time.monotonic() + ttl
@@ -47,25 +66,29 @@ def create_session() -> tuple[str, int]:
         # Bound memory even when one authenticated client creates many sessions.
         if len(_SESSIONS) >= MAX_SESSIONS:
             _SESSIONS.pop(next(iter(_SESSIONS)))
-        _SESSIONS[token] = (expires_at, _credential_fingerprint())
+        _SESSIONS[token] = (expires_at, _credential_fingerprint(identity.method), identity)
 
     return token, ttl
 
 
-def is_session_valid(token: str | None) -> bool:
+def get_session(token: str | None) -> AdminIdentity | None:
     if not token or len(token) > 128:
-        return False
+        return None
 
     now = time.monotonic()
     with _LOCK:
         session = _SESSIONS.get(token)
         if session is None:
-            return False
-        expires_at, fingerprint = session
-        if expires_at <= now or fingerprint != _credential_fingerprint():
+            return None
+        expires_at, fingerprint, identity = session
+        if _session_expired(expires_at, fingerprint, identity, now):
             _SESSIONS.pop(token, None)
-            return False
-        return True
+            return None
+        return identity
+
+
+def is_session_valid(token: str | None) -> bool:
+    return get_session(token) is not None
 
 
 def revoke_session(token: str | None) -> None:
@@ -75,12 +98,19 @@ def revoke_session(token: str | None) -> None:
         _SESSIONS.pop(token, None)
 
 
+def _session_expired(expires_at: float, fingerprint: bytes | None, identity: AdminIdentity, now: float) -> bool:
+    return (
+        expires_at <= now
+        or fingerprint is None
+        or fingerprint != _credential_fingerprint(identity.method)
+    )
+
+
 def _purge_expired_locked() -> None:
     now = time.monotonic()
-    fingerprint = _credential_fingerprint()
     expired = [
-        token for token, (expires_at, saved_fingerprint) in _SESSIONS.items()
-        if expires_at <= now or saved_fingerprint != fingerprint
+        token for token, session in _SESSIONS.items()
+        if _session_expired(*session, now)
     ]
     for token in expired:
         _SESSIONS.pop(token, None)
