@@ -7,6 +7,7 @@ import { formatDateTime } from "../hooks/dateFormatting";
 import { validateImages } from "../hooks/imageSelection";
 import { StatusBadge } from "../components/DeviceTable";
 import {
+  assignDeviceTag,
   createDevicePublicAccess,
   deleteDeviceImage,
   getDevicePublicAccess,
@@ -50,6 +51,7 @@ export default function DeviceDetail({ deviceId, onBack, onChanged }) {
   const [locationId, setLocationId] = useState("");
   const [loading, setLoading] = useState(true);
   const [publicAccess, setPublicAccess] = useState(null);
+  const [newTag, setNewTag] = useState("");
   const [actionKind, setActionKind] = useState("");
   const { busy, beginAction, endAction } = usePendingAction();
   const savingResponsible = actionKind === "responsible";
@@ -145,6 +147,22 @@ export default function DeviceDetail({ deviceId, onBack, onChanged }) {
       if (!isCurrent()) return;
       await load(); await onChanged?.();
       if (isCurrent()) setMessage("Responsabilul obiectului a fost actualizat.");
+    });
+  }
+
+  async function handleAssignTag(event) {
+    event.preventDefault();
+    const code = newTag.trim().toUpperCase();
+    const current = tracking?.device.tag_code;
+    if (!code || busy || loading) return;
+    if (current && !window.confirm(`Înlocuiești eticheta ${current} cu ${code}? ${current} va fi anulată și nu mai poate fi folosită.`)) return;
+    await runAction("tag", async (isCurrent) => {
+      await assignDeviceTag(deviceId, code);
+      if (!isCurrent()) return;
+      setNewTag("");
+      await load();
+      await onChanged?.();
+      if (isCurrent()) setMessage(current ? `Eticheta a fost înlocuită cu ${code}.` : `Eticheta ${code} a fost asociată obiectului.`);
     });
   }
 
@@ -451,12 +469,31 @@ export default function DeviceDetail({ deviceId, onBack, onChanged }) {
             <div className="panel-header"><div><span className="panel-eyebrow">ASSET DATA</span><h3>Fișa tehnică</h3></div></div>
             <dl>
               <div><dt>Cod inventar</dt><dd><code className="code-pill">{device.code}</code></dd></div>
+              <div><dt>Etichetă</dt><dd>{device.tag_code ? <code className="code-pill">{device.tag_code}</code> : "Fără etichetă"}</dd></div>
               <div><dt>Categorie</dt><dd>{device.category}</dd></div>
               <div><dt>Număr serie</dt><dd>{device.serial_number || "-"}</dd></div>
               <div><dt>Status</dt><dd><StatusBadge status={device.status} /></dd></div>
               <div><dt>ID intern</dt><dd>#{device.id}</dd></div>
             </dl>
           </div>
+
+          <form className="panel tag-panel" onSubmit={handleAssignTag} aria-busy={actionKind === "tag"}>
+            <div className="panel-header">
+              <div><span className="panel-eyebrow">ASSET TAG</span><h3>Etichetă</h3></div>
+              <div className="round-icon"><Icon name="tag" size={18} /></div>
+            </div>
+            <div className={`tag-current ${device.tag_code ? "" : "missing"}`}>
+              <Icon name="barcode" size={18} />
+              <strong>{device.tag_code || "Fără etichetă"}</strong>
+            </div>
+            <label className="field">
+              <span>{device.tag_code ? "Înlocuiește cu eticheta" : "Asociază eticheta"}</span>
+              <input disabled={busy || loading} maxLength={40} placeholder="Scanează eticheta (INV-000123)" value={newTag} onChange={(event) => setNewTag(event.target.value)} autoCapitalize="characters" spellCheck={false} />
+            </label>
+            <div className="tag-panel-actions">
+              <button className="btn btn-primary" type="submit" disabled={busy || loading || !newTag.trim()}><Icon name="tag" size={15} /> {device.tag_code ? "Înlocuiește" : "Asociază"}</button>
+            </div>
+          </form>
 
           <div className="panel public-access-panel">
             <div className="panel-header public-access-heading">

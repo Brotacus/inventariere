@@ -15,8 +15,17 @@ class DeviceBase(BaseModel):
     description: str | None = None
 
 
+def normalize_tag_code(value: str | None) -> str | None:
+    # Scanners and keyboards differ in case and may add stray whitespace.
+    if value is None:
+        return None
+    return value.strip().upper() or None
+
+
 class DeviceCreate(DeviceBase):
-    # Every new asset must enter the inventory with a known physical location.
+    # Every new asset enters the inventory with a known physical location and
+    # the pre-printed tag that was stuck on it.
+    tag_code: str = Field(min_length=1, max_length=40)
     name: str = Field(max_length=200)
     category: str = Field(max_length=200)
     serial_number: str | None = Field(None, max_length=255)
@@ -24,6 +33,11 @@ class DeviceCreate(DeviceBase):
     location_id: int = Field(gt=0)
     responsible_person_id: int | None = Field(None, gt=0)
     description: str | None = Field(None, max_length=10000)
+
+    @field_validator("tag_code")
+    @classmethod
+    def normalize_tag(cls, value):
+        return normalize_tag_code(value)
 
 
 class DeviceUpdate(BaseModel):
@@ -39,6 +53,7 @@ class DeviceUpdate(BaseModel):
 class DeviceResponse(DeviceBase):
     id: int
     code: str
+    tag_code: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -191,6 +206,55 @@ class NotificationResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TagBatchCreate(BaseModel):
+    quantity: int = Field(ge=1, le=240)
+
+
+class TagAssignRequest(BaseModel):
+    tag_code: str = Field(min_length=1, max_length=40)
+
+    @field_validator("tag_code")
+    @classmethod
+    def normalize_tag(cls, value):
+        return normalize_tag_code(value)
+
+
+class TagDevice(BaseModel):
+    id: int
+    code: str
+    name: str
+
+
+class TagResponse(BaseModel):
+    code: str
+    status: str
+    batch_id: int
+    device: TagDevice | None = None
+    assigned_at: datetime | None = None
+    voided_at: datetime | None = None
+
+
+class PrintableTag(BaseModel):
+    code: str
+    barcode_svg: str
+
+
+class TagBatchResponse(BaseModel):
+    id: int
+    quantity: int
+    created_at: datetime | None = None
+    first_code: str
+    last_code: str
+    available: int
+    assigned: int
+    void: int
+
+
+class TagBatchPrintResponse(TagBatchResponse):
+    # Only tags that can still be stuck on an item are (re)printed.
+    tags: list[PrintableTag]
 
 
 class AdminClearDataRequest(BaseModel):

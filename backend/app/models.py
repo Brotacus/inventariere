@@ -1,4 +1,5 @@
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -18,6 +19,12 @@ class Device(Base):
     description = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    tag = relationship("AssetTag", uselist=False, viewonly=True, lazy="selectin")
+
+    @property
+    def tag_code(self) -> str | None:
+        return self.tag.code if self.tag else None
 
 
 class InventoryCounter(Base):
@@ -141,3 +148,32 @@ class DevicePublicLink(Base):
     is_active = Column(Integer, default=1, nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     regenerated_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class AssetTagBatch(Base):
+    """A set of pre-printed asset tags, generated together for one print run."""
+
+    __tablename__ = "asset_tag_batches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    quantity = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AssetTag(Base):
+    """A pre-printed sticker. It becomes an item's identity when assigned.
+
+    AVAILABLE: printed, not on an item yet. ASSIGNED: stuck on device_id.
+    VOID: lost, damaged, removed or replaced; never assignable again.
+    """
+
+    __tablename__ = "asset_tags"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, nullable=False, unique=True, index=True)
+    batch_id = Column(Integer, ForeignKey("asset_tag_batches.id"), nullable=False, index=True)
+    status = Column(String, default="AVAILABLE", nullable=False, index=True)
+    # Unique: one sticker per item. Void tags keep no device, so NULLs repeat.
+    device_id = Column(Integer, ForeignKey("devices.id"), nullable=True, unique=True)
+    assigned_at = Column(DateTime(timezone=True), nullable=True)
+    voided_at = Column(DateTime(timezone=True), nullable=True)

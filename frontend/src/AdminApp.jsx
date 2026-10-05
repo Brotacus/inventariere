@@ -15,6 +15,7 @@ import Loans from "./pages/Loans";
 import Locations from "./pages/Locations";
 import Logs from "./pages/Logs";
 import People from "./pages/People";
+import Tags from "./pages/Tags";
 import {
   clearAdminSession,
   deleteDevice,
@@ -33,6 +34,7 @@ export default function AdminApp({ theme, onToggleTheme }) {
   const [currentPage, setCurrentPage] = useState("Dashboard");
   const [devices, setDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
+  const [addDeviceTag, setAddDeviceTag] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [error, setError] = useState("");
@@ -168,11 +170,18 @@ export default function AdminApp({ theme, onToggleTheme }) {
   }
 
   function navigate(page) {
+    setAddDeviceTag("");
     setCurrentPage(page);
     if (page !== "Device Detail") setSelectedDeviceId(null);
     setCommandOpen(false);
     setSidebarOpen(false);
     window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+  }
+
+  // Scanning a free tag starts adding the item that tag was stuck on.
+  function addDeviceWithTag(tagCode) {
+    navigate("Add Device");
+    setAddDeviceTag(tagCode);
   }
 
   function openDevice(deviceId) {
@@ -185,11 +194,12 @@ export default function AdminApp({ theme, onToggleTheme }) {
 
   function renderPage() {
     if (currentPage === "Dashboard") return <Dashboard devices={devices} onNavigate={navigate} />;
-    if (currentPage === "Inventory") return <Inventory devices={devices} onDelete={handleDeleteDevice} onOpen={openDevice} deleting={deleting} />;
+    if (currentPage === "Inventory") return <Inventory devices={devices} onDelete={handleDeleteDevice} onOpen={openDevice} onAddWithTag={addDeviceWithTag} deleting={deleting} />;
     if (currentPage === "Device Detail" && selectedDeviceId) {
       return <DeviceDetail deviceId={selectedDeviceId} onBack={() => navigate("Inventory")} onChanged={loadDevices} />;
     }
-    if (currentPage === "Add Device") return <AddDevice onDeviceAdded={loadDevices} onNavigate={navigate} />;
+    if (currentPage === "Add Device") return <AddDevice key={addDeviceTag} initialTag={addDeviceTag} onDeviceAdded={loadDevices} onNavigate={navigate} onOpenDevice={openDevice} />;
+    if (currentPage === "Tags") return <Tags />;
     if (currentPage === "People") return <People />;
     if (currentPage === "Locations") return <Locations />;
     if (currentPage === "Loans") return <Loans onInventoryChanged={loadDevices} />;

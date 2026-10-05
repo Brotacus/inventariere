@@ -11,6 +11,7 @@ from app.database import SessionLocal
 from app.main import app
 from app.routes import devices
 from app.services import email_service
+from tests.tagging import next_tag, next_tags
 
 
 def create(client, path, payload):
@@ -22,7 +23,7 @@ def create(client, path, payload):
 def inventory(client):
     location = create(client, "/locations/", {"name": "Room"})
     person = create(client, "/people/", {"name": "Borrower"})
-    device = create(client, "/devices/", {"name": "Camera", "category": "Video", "location_id": location["id"]})
+    device = create(client, "/devices/", {"name": "Camera", "category": "Video", "location_id": location["id"], "tag_code": next_tag(client)})
     return location, person, device
 
 
@@ -45,7 +46,7 @@ def test_null_updates_do_not_corrupt_required_fields(client):
 def test_write_limits_and_email_validation_preserve_inventory(client):
     location, person, device = inventory(client)
     requests = [
-        ("POST", "/devices/", {"name": "x" * 201, "category": "Video", "location_id": location["id"]}),
+        ("POST", "/devices/", {"name": "x" * 201, "category": "Video", "location_id": location["id"], "tag_code": next_tag(client)}),
         ("PUT", f"/devices/{device['id']}", {"description": "x" * 10001}),
         ("POST", "/people/", {"name": "Somebody", "email": "victim@example.com\nBcc: attacker@example.com"}),
         ("PUT", f"/people/{person['id']}", {"email": "not an email"}),
@@ -65,7 +66,7 @@ def test_write_limits_and_email_validation_preserve_inventory(client):
 def test_deleted_device_identity_and_catalog_url_are_not_reused(client):
     location, _, old = inventory(client)
     assert client.delete(f"/devices/{old['id']}").status_code == 200
-    new = create(client, "/devices/", {"name": "Replacement", "category": "Video", "location_id": location["id"]})
+    new = create(client, "/devices/", {"name": "Replacement", "category": "Video", "location_id": location["id"], "tag_code": next_tag(client)})
     assert new["id"] > old["id"]
     assert new["code"] != old["code"]
     assert client.get(f"/public/assets/catalog/{old['code']}").status_code == 404
@@ -77,8 +78,9 @@ def test_deleted_device_identity_and_catalog_url_are_not_reused(client):
 
 def test_concurrent_creations_have_unique_persistent_codes(client):
     location = create(client, "/locations/", {"name": "Room"})
+    tags = next_tags(client, 8)
     def submit(index):
-        return client.post("/devices/", json={"name": f"Asset {index}", "category": "Video", "location_id": location["id"]})
+        return client.post("/devices/", json={"name": f"Asset {index}", "category": "Video", "location_id": location["id"], "tag_code": tags[index]})
     with ThreadPoolExecutor(max_workers=4) as pool:
         responses = list(pool.map(submit, range(8)))
     assert all(response.status_code == 201 for response in responses), [response.text for response in responses]

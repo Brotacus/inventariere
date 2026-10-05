@@ -20,6 +20,7 @@ from app.routes import admin, auth
 from app.services import auth_service, backup
 from app.services import security_middleware
 from app.services.security import UPLOAD_DIR
+from tests.tagging import next_tag
 
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jWZkAAAAASUVORK5CYII="
@@ -241,7 +242,7 @@ def test_reset_does_not_reuse_inventory_ids_or_catalog_urls(client, monkeypatch)
         person = client.post("/people/", json={"name": "Borrower", "is_borrower": True})
         assert person.status_code == 201, person.text
         device = client.post("/devices/", json={
-            "name": "Camera", "category": "Video", "location_id": location.json()["id"],
+            "name": "Camera", "category": "Video", "location_id": location.json()["id"], "tag_code": next_tag(client),
         })
         assert device.status_code == 201, device.text
         loan = client.post("/loans/", json={"device_id": device.json()["id"], "person_id": person.json()["id"]})

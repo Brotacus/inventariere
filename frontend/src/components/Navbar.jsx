@@ -7,6 +7,7 @@ const pageLabels = {
   Inventory: "Inventar",
   "Device Detail": "Fișa obiectului",
   "Add Device": "Adaugă obiect",
+  Tags: "Etichete",
   People: "Persoane",
   Locations: "Locații",
   Loans: "Împrumuturi",

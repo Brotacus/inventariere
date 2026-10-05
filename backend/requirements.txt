@@ -5,4 +5,5 @@ pydantic==2.13.5
 python-dotenv==1.2.3
 python-multipart==0.0.32
 qrcode==8.2
+python-barcode==0.16.1
 Pillow==12.3.0

@@ -1,9 +1,9 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Icon from "../components/Icon";
 import usePendingAction from "../hooks/usePendingAction";
 import useLatestRequest from "../hooks/useLatestRequest";
 import { validateImages } from "../hooks/imageSelection";
-import { createDevice, getPeople, getLocations, uploadDeviceImages } from "../services/api";
+import { createDevice, getPeople, getLocations, getTag, uploadDeviceImages } from "../services/api";
 
 const initialForm = {
   name: "",
@@ -15,8 +15,21 @@ const initialForm = {
   responsible_person_id: "",
 };
 
-export default function AddDevice({ onDeviceAdded, onNavigate }) {
+function tagProblem(tag) {
+  if (tag.status === "ASSIGNED") return `Eticheta ${tag.code} este deja pe ${tag.device ? `${tag.device.code} · ${tag.device.name}` : "alt obiect"}.`;
+  if (tag.status === "VOID") return `Eticheta ${tag.code} a fost anulată și nu mai poate fi folosită.`;
+  return "";
+}
+
+export default function AddDevice({ initialTag = "", onDeviceAdded, onNavigate, onOpenDevice }) {
   const [form, setForm] = useState(initialForm);
+  const [tagCode, setTagCode] = useState(initialTag);
+  const [tagCheck, setTagCheck] = useState({ state: "idle", text: "" });
+  const [created, setCreated] = useState(null);
+  const tagRef = useRef(null);
+  const nameRef = useRef(null);
+  const initialFocusDone = useRef(false);
+  const focusTagAfterSave = useRef(false);
   const [locations, setLocations] = useState([]);
   const [responsibles, setResponsibles] = useState([]);
   const [images, setImages] = useState([]);
@@ -45,6 +58,48 @@ export default function AddDevice({ onDeviceAdded, onNavigate }) {
   }
   useEffect(() => { loadOptions(); }, []);
 
+  useEffect(() => { if (initialTag) checkTag(initialTag); }, []);
+
+  // The fields are disabled while loading or saving and cannot take focus
+  // until then. On desktops the tag field waits for the scanner; phones
+  // would open the on-screen keyboard instead.
+  useEffect(() => {
+    if (loadingOptions || saving) return;
+    if (!initialFocusDone.current) {
+      initialFocusDone.current = true;
+      if (initialTag) nameRef.current?.focus();
+      else if (window.matchMedia?.("(pointer: fine)").matches) tagRef.current?.focus();
+    } else if (focusTagAfterSave.current) {
+      focusTagAfterSave.current = false;
+      tagRef.current?.focus();
+    }
+  }, [loadingOptions, saving]);
+
+  async function checkTag(value) {
+    const code = value.trim().toUpperCase();
+    if (!code) {
+      setTagCheck({ state: "idle", text: "" });
+      return true;
+    }
+    setTagCheck({ state: "checking", text: "Se verifică eticheta…" });
+    try {
+      const tag = await getTag(code);
+      const problem = tagProblem(tag);
+      setTagCheck(problem ? { state: "error", text: problem } : { state: "ok", text: `Eticheta ${tag.code} este liberă și va fi asociată la salvare.` });
+      return !problem;
+    } catch (err) {
+      setTagCheck({ state: "error", text: err.message });
+      return false;
+    }
+  }
+
+  function handleTagKey(event) {
+    if (event.key !== "Enter") return;
+    // Scanners finish with Enter: check the tag instead of submitting the form.
+    event.preventDefault();
+    checkTag(tagCode).then((usable) => { if (usable && tagCode.trim()) nameRef.current?.focus(); });
+  }
+
   useLayoutEffect(() => {
     const current = images.map((file) => ({ file, url: URL.createObjectURL(file) }));
     setPreviews(current);
@@ -72,8 +127,14 @@ export default function AddDevice({ onDeviceAdded, onNavigate }) {
     if (!beginAction()) return;
     setMessage("");
     setError("");
+    setCreated(null);
 
     try {
+      if (!tagCode.trim()) {
+        tagRef.current?.focus();
+        throw new Error("Scanează eticheta lipită pe obiect. Fiecare obiect intră în inventar cu eticheta lui.");
+      }
+      if (tagCheck.state === "error") throw new Error(tagCheck.text);
       if (!form.location_id) throw new Error("Selectează locația inițială a obiectului.");
       if (!form.name.trim() || !form.category.trim()) throw new Error("Completează numele și categoria obiectului.");
 
@@ -85,6 +146,7 @@ export default function AddDevice({ onDeviceAdded, onNavigate }) {
         responsible_person_id: form.responsible_person_id ? Number(form.responsible_person_id) : null,
         serial_number: form.serial_number || null,
         description: form.description || null,
+        tag_code: tagCode.trim(),
       });
 
       let uploadedCount = 0;
@@ -97,13 +159,19 @@ export default function AddDevice({ onDeviceAdded, onNavigate }) {
         }
       }
 
+      const identity = newDevice.tag_code ? `${newDevice.code} (eticheta ${newDevice.tag_code})` : newDevice.code;
       setMessage(
         uploadedCount
-          ? `${newDevice.code} a fost adăugat și are ${uploadedCount} ${uploadedCount === 1 ? "imagine" : "imagini"}.`
-          : `${newDevice.code} a fost adăugat cu succes.`
+          ? `${identity} a fost adăugat și are ${uploadedCount} ${uploadedCount === 1 ? "imagine" : "imagini"}.`
+          : `${identity} a fost adăugat cu succes.`
       );
+      setCreated(newDevice);
       setForm(initialForm);
+      setTagCode("");
+      setTagCheck({ state: "idle", text: "" });
       setImages([]);
+      // Ready for the next sticker once the form is enabled again.
+      focusTagAfterSave.current = true;
       await onDeviceAdded();
     } catch (err) {
       setError(err.message);
@@ -141,8 +209,30 @@ export default function AddDevice({ onDeviceAdded, onNavigate }) {
           )}
 
           <fieldset className="form-fields" disabled={saving || loadingOptions}>
+          <label className={`field tag-scan-field ${tagCheck.state}`}>
+            <span><Icon name="barcode" size={14} /> Etichetă *</span>
+            <input
+              ref={tagRef}
+              name="tag_code"
+              maxLength={40}
+              placeholder="Scanează eticheta lipită pe obiect (INV-000123)"
+              value={tagCode}
+              onChange={(event) => { setTagCode(event.target.value); setTagCheck({ state: "idle", text: "" }); }}
+              onKeyDown={handleTagKey}
+              onBlur={() => checkTag(tagCode)}
+              autoCapitalize="characters"
+              spellCheck={false}
+              required
+              aria-invalid={tagCheck.state === "error"}
+              aria-describedby="tag-scan-status"
+            />
+            <small id="tag-scan-status" role="status">{tagCheck.text || "Obligatorie. Lipește o etichetă pe obiect și scaneaz-o."}</small>
+          </label>
+          {tagCheck.state === "error" && tagCheck.text.includes("pagina Etichete") && (
+            <button type="button" className="text-button tag-print-link" onClick={() => onNavigate?.("Tags")}>Tipărește etichete</button>
+          )}
           <div className="form-grid two-cols">
-            <label className="field"><span>Nume obiect *</span><input name="name" maxLength={200} placeholder="Ex. Osciloscop Hantek" value={form.name} onChange={handleChange} required /></label>
+            <label className="field"><span>Nume obiect *</span><input ref={nameRef} name="name" maxLength={200} placeholder="Ex. Osciloscop Hantek" value={form.name} onChange={handleChange} required /></label>
             <label className="field"><span>Categorie *</span><input name="category" maxLength={200} placeholder="Ex. Instrumentație" value={form.category} onChange={handleChange} required /></label>
             <label className="field"><span>Număr de serie</span><input name="serial_number" maxLength={255} placeholder="SN-2026-001" value={form.serial_number} onChange={handleChange} /></label>
             <label className="field"><span>Status inițial</span><select name="status" value={form.status} onChange={handleChange}><option value="AVAILABLE">Disponibil</option><option value="IN_USE">În uz</option><option value="BROKEN">Stricat</option><option value="LOST">Pierdut</option><option value="RETIRED">Scos din uz</option></select></label>
@@ -187,7 +277,7 @@ export default function AddDevice({ onDeviceAdded, onNavigate }) {
 
           {loadingOptions && <p role="status">Se încarcă locațiile și responsabilii…</p>}
           {optionsError && <div className="alert alert-error" role="alert"><Icon name="alert" size={18} /><span>{optionsError}</span><button type="button" className="text-button" disabled={loadingOptions || saving} onClick={loadOptions}>Reîncearcă încărcarea listelor</button></div>}
-          {message && <div className="alert alert-success" role="status"><Icon name="check" size={18} /><span>{message}</span></div>}
+          {message && <div className="alert alert-success" role="status"><Icon name="check" size={18} /><span>{message}</span>{created && onOpenDevice && <button type="button" className="text-button" onClick={() => onOpenDevice(created.id)}>Deschide fișa</button>}</div>}
           {error && <div className="alert alert-error" role="alert"><Icon name="alert" size={18} /><span>{error}</span></div>}
 
           <div className="form-footer">
@@ -198,7 +288,7 @@ export default function AddDevice({ onDeviceAdded, onNavigate }) {
 
         <aside className="form-aside">
           <div className="aside-card dark-card"><div className="aside-icon"><Icon name="inventory" /></div><h3>Obiect urmărit din prima zi</h3><p>Prima locație devine automat primul punct din istoricul obiectului. Fiecare mutare ulterioară este păstrată.</p></div>
-          <div className="aside-card"><span className="panel-eyebrow">COD AUTOMAT</span><h3>Identitate permanentă</h3><p>Backend-ul generează automat un cod unic de tip <code>DEV-00001</code> după salvare.</p></div>
+          <div className="aside-card"><span className="panel-eyebrow">ETICHETĂ</span><h3>Lipește, scanează, salvează</h3><p>Etichetele se tipăresc în avans din pagina Etichete. Eticheta scanată aici devine identitatea fizică a obiectului; aplicația îi atribuie și un cod intern <code>DEV-00001</code>.</p></div>
         </aside>
       </div>
     </section>
