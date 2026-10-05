@@ -7,6 +7,8 @@ import { getLoginMethods } from "../services/api";
 export default function LoginScreen({ theme, onToggleTheme, onLogin, checking = false, verificationError = "", onRetryVerification }) {
   const [methods, setMethods] = useState({ password: true, ldap: false });
   const [mode, setMode] = useState("password");
+  const [methodsError, setMethodsError] = useState("");
+  const [methodsAttempt, setMethodsAttempt] = useState(0);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -20,13 +22,16 @@ export default function LoginScreen({ theme, onToggleTheme, onLogin, checking = 
 
   useEffect(() => {
     const controller = new AbortController();
-    // Without an answer keep the local password form; login reports the error.
+    setMethodsError("");
     getLoginMethods(controller.signal).then((available) => {
       setMethods({ password: Boolean(available?.password), ldap: Boolean(available?.ldap) });
-      if (available?.ldap) setMode("ldap");
-    }).catch(() => {});
+      setMode(available?.ldap ? "ldap" : "password");
+    }).catch((err) => {
+      // Say so instead of silently offering a form that may not be enabled.
+      if (!controller.signal.aborted) setMethodsError(err.message || "Serverul nu a răspuns.");
+    });
     return () => controller.abort();
-  }, []);
+  }, [methodsAttempt]);
 
   useEffect(() => {
     (ldap ? usernameRef : inputRef).current?.focus();
@@ -197,6 +202,15 @@ export default function LoginScreen({ theme, onToggleTheme, onLogin, checking = 
                 <div className="login-error" id="login-error" role="alert">
                   <Icon name="alert" size={16} />
                   <span>{error}</span>
+                </div>
+              )}
+
+              {methodsError && (
+                <div className="login-verification-error" role="alert">
+                  <p>Metodele de autentificare nu au putut fi încărcate. {methodsError}</p>
+                  <button type="button" className="btn btn-secondary" disabled={submitting} onClick={() => setMethodsAttempt(attempt => attempt + 1)}>
+                    Reîncearcă
+                  </button>
                 </div>
               )}
 
